@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI News Daily"
+  short_description: "OpenClaw daily AI news to Feishu"
+  default_prompt: "Use $ai-news to run the OpenClaw daily AI news approval, Base archive, Feishu card building, and group publishing workflow."
