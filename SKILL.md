@@ -113,10 +113,11 @@ If required secrets or destination IDs are missing for the active platform, stop
 7. `scripts/validate_news_payload.py` before review
 8. `quality_reviewer` maker-checker pass; main agent audits [references/architecture.md](references/architecture.md) quality gates
 9. `scripts/hash_payload.py` → freeze approval payload
-10. `scripts/send_feishu_message.py` → administrator approval
+10. `scripts/send_feishu_approval.py` (card) or `scripts/send_feishu_message.py` (MVP text) → administrator approval
 11. On approval: `archive_record_builder` → `scripts/archive_feishu_base.py` → `scripts/fetch_feishu_base_records.py` → `scripts/build_feishu_card.py` → `scripts/send_feishu_card.py`
-12. On rejection: `replan_advisor` → rerun smallest slice → increment `iteration_count`
-13. Mark `loop_state.stage = completed` only after publish `message_id` exists
+12. Callback path: `scripts/validate_feishu_callback.py` validates signature/operator/expiry/hash before advancing state
+13. On rejection: `replan_advisor` → rerun smallest slice → increment `iteration_count`
+14. Mark `loop_state.stage = completed` only after publish `message_id` exists
 
 ## Context And Memory
 

@@ -291,6 +291,22 @@ scripts/query_memory.py \
 
 预期返回 `SKILL.md` 或 `references/subagent-contracts.md` 中的相关小片段。
 
+### 2b. 检查 Horizon 风格确定性采集脚本
+
+RSS 采集（从 config 的 `sources.rss` 读取）：
+
+```bash
+python3 scripts/fetch_rss.py --input data/config.example.json --hours 24
+```
+
+Hacker News 采集：
+
+```bash
+python3 scripts/fetch_hackernews.py --hours 24 --fetch-top-stories 20 --min-score 50
+```
+
+返回结果包含统一字段：`id/source_type/headline/url/published_at/metadata`，可直接作为后续去重和评分输入。
+
 ### 3. 检查 payload hash
 
 ```bash
@@ -429,6 +445,61 @@ PY
 scripts/send_feishu_card.py --input /tmp/ai-news-card-message.json
 ```
 
+### 10. dry-run 测试飞书互动卡审批发送
+
+```bash
+cat > /tmp/ai-news-approval.json <<'JSON'
+{
+  "job_id": "ai-news-test",
+  "payload_hash": "abc123",
+  "report_date": "2026-06-09",
+  "window_start": "2026-06-08T09:00:00+08:00",
+  "window_end": "2026-06-09T09:00:00+08:00",
+  "timezone": "Asia/Shanghai",
+  "draft_payload": {
+    "items": [
+      {"headline": "AI News dry-run headline"}
+    ]
+  },
+  "receive_id": "ou_xxx",
+  "receive_id_type": "open_id",
+  "dry_run": true
+}
+JSON
+
+python3 scripts/send_feishu_approval.py --input /tmp/ai-news-approval.json --dry-run
+```
+
+### 11. 测试飞书审批 callback 校验
+
+先构造 callback body：
+
+```bash
+cat > /tmp/ai-news-callback.json <<'JSON'
+{
+  "decision": "approved",
+  "job_id": "ai-news-test",
+  "payload_hash": "abc123",
+  "operator_user_id": "ou_xxx",
+  "expires_at": "2099-01-01T00:00:00+00:00",
+  "decided_at": "2026-06-09T10:00:00+08:00"
+}
+JSON
+```
+
+如果先不接入真实 header 签名，可跳过签名检查：
+
+```bash
+python3 scripts/validate_feishu_callback.py \
+  --input /tmp/ai-news-callback.json \
+  --expected-job-id ai-news-test \
+  --expected-payload-hash abc123 \
+  --admin-id ou_xxx \
+  --skip-signature-check
+```
+
+接入真实事件时，再补 `--header-timestamp`、`--header-nonce`、`--header-signature` 和 `--app-secret` 做完整签名校验。
+
 ## 手动运行 Skill
 
 可以先让 OpenClaw 手动跑一次，不创建定时任务：
@@ -520,7 +591,7 @@ openclaw cron runs --id <job-id> --limit 10
 
 ### 进阶：互动卡审批
 
-后续可以补两个确定性脚本：
+当前已提供两个确定性脚本：
 
 - `scripts/send_feishu_approval.py`
 - `scripts/validate_feishu_callback.py`

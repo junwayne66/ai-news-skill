@@ -71,7 +71,7 @@ These utility scripts provide deterministic building blocks:
 - `scripts/send_feishu_card.py`: send Feishu interactive cards through `lark-cli api`.
 - `scripts/query_memory.py`: return small relevant snippets from `SKILL.md` and `references/`.
 
-Production integrations should add:
+Approval-card integrations are implemented with:
 
 - `scripts/send_feishu_approval.py`
 - `scripts/validate_feishu_callback.py`
