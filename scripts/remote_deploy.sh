@@ -46,16 +46,21 @@ TARGET="${HOST}:${REMOTE_SKILL_DIR}"
 log "using host: $HOST"
 
 log "syncing repo to $TARGET"
-rsync -av --delete \
-  --exclude '.git' \
-  --exclude 'data/runs' \
-  --exclude '__pycache__' \
-  ./ \
-  "$TARGET/"
+if command -v rsync >/dev/null 2>&1; then
+  rsync -av --delete \
+    --exclude '.git' \
+    --exclude 'data/runs' \
+    --exclude '__pycache__' \
+    ./ \
+    "$TARGET/"
+else
+  tar -cf - --exclude='.git' --exclude='data/runs' --exclude='__pycache__' . \
+    | ssh -o BatchMode=yes "$HOST" "mkdir -p '$REMOTE_SKILL_DIR' && tar -xf - -C '$REMOTE_SKILL_DIR'"
+fi
 
 REMOTE_CMD=$(cat <<'EOS'
 set -euo pipefail
-export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+export PATH="$HOME/.openclaw/bin:$HOME/.openclaw/tools/node-v22.22.0/bin:$HOME/.npm-global/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
 openclaw update
 openclaw skills install REMOTE_SKILL_DIR_PLACEHOLDER --as ai-news --force
 openclaw skills check
@@ -71,7 +76,7 @@ log "updating OpenClaw and reinstalling ai-news skill"
 ssh -o BatchMode=yes "$HOST" "$REMOTE_CMD"
 
 log "sending WeChat deployment notification (if configured)"
-ssh -o BatchMode=yes "$HOST" "cd '$REMOTE_SKILL_DIR' && ./scripts/send_wechat_notification.sh --status success --summary 'ai-news-skill deployed and e2e passed on $(hostname)'" \
+ssh -o BatchMode=yes "$HOST" "bash -lc 'export PATH=\"\$HOME/.openclaw/bin:\$HOME/.openclaw/tools/node-v22.22.0/bin:\$PATH\"; cd \"$REMOTE_SKILL_DIR\" && ./scripts/send_wechat_notification.sh --status success --summary \"ai-news-skill deployed and e2e passed on \$(hostname)\"'" \
   || log "WeChat notification skipped or failed (channel may be unconfigured)"
 
 log "remote deploy complete"

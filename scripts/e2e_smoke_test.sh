@@ -202,7 +202,7 @@ fi
 
 if command -v openclaw >/dev/null 2>&1; then
   if openclaw skills info ai-news >/tmp/e2e-openclaw-skill.txt 2>&1; then
-    if rg -q "ai-news" /tmp/e2e-openclaw-skill.txt; then
+    if grep -q "ai-news" /tmp/e2e-openclaw-skill.txt; then
       pass "openclaw skill installed"
     else
       fail "openclaw skill installed"
