@@ -34,6 +34,8 @@ Schedule → RunContext + loop_state.json
 - OpenClaw Cron: https://docs.openclaw.ai/cli/cron
 - Lark/Feishu CLI: https://github.com/larksuite/cli
 
+生产环境远程主机信息见 [references/remote-host.md](references/remote-host.md)。优先 `ssh spark`，外网使用 `ssh remote-spark`。
+
 ## 目录结构
 
 ```text

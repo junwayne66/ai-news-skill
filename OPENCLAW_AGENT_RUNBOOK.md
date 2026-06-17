@@ -7,6 +7,27 @@ Authoritative references:
 - OpenClaw skills CLI: https://docs.openclaw.ai/cli/skills
 - OpenClaw cron CLI: https://docs.openclaw.ai/cli/cron
 - Lark/Feishu CLI: https://github.com/larksuite/cli
+- Remote host environment: [references/remote-host.md](references/remote-host.md)
+
+## Remote Host Memory
+
+When the target is the production host, load remote environment memory first:
+
+```bash
+scripts/query_memory.py --query "remote host ssh spark openclaw share skills" --top-k 3
+```
+
+Default SSH preference:
+
+1. Intranet: `ssh spark`
+2. External: `ssh remote-spark`
+
+Default remote paths:
+
+- OpenClaw: `/home/wayne/.openclaw`
+- Claude Code: `/home/wayne/.claude`
+- Shared skills: `/home/wayne/.share/skills`
+- Shared memory: `/home/wayne/.share/memory`
 
 ## Operating Rules For The Agent
 

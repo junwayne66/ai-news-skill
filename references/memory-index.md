@@ -6,6 +6,8 @@ Use `scripts/query_memory.py` to load only the snippets needed for the current t
 
 | Need | Query |
 | --- | --- |
+| Remote host SSH and paths | `remote host ssh spark openclaw share skills` |
+| Remote deploy flow | `remote deploy rsync openclaw skills install` |
 | Script-first fetch pipeline | `fetch_sources url_dedupe prefetched collector` |
 | Deterministic source collectors | `fetch_rss fetch_hackernews fetch_sources` |
 | Loop engineering stop rules | `loop state termination maker checker` |
@@ -34,4 +36,5 @@ Agents should request no more than 3-5 snippets per step. If a snippet reveals t
 | `industry_analyst` | `horizon enrich significance` |
 | `quality_reviewer` | `quality gates loop maker checker` |
 | orchestrator on OpenClaw | `openclaw cron loop_state platform` |
+| remote production host | `ssh spark remote-spark wayne share skills` |
 | Hermes executor | `hermes executor envelope handoff` |

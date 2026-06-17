@@ -146,6 +146,7 @@ Avoid rumors, duplicate clusters, vague filler, and exaggerated claims.
 
 ## Reference Files
 
+- [references/remote-host.md](references/remote-host.md): production SSH aliases, remote paths, deploy and smoke-test commands
 - [references/horizon-pipeline.md](references/horizon-pipeline.md): Horizon core data flow mapped to this skill
 - [references/loop-engineering.md](references/loop-engineering.md): durable state, stop rules, maker-checker, iteration guards
 - [references/platform-adapters.md](references/platform-adapters.md): OpenClaw, Hermes, Claude, Cursor, Codex bindings
