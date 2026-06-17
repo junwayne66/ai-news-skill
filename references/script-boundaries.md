@@ -10,9 +10,10 @@ This reduces hallucination risk and keeps subagent context short.
 
 ## Must Be Scripts
 
-Implement these as scripts or OpenClaw-provided command invocations:
+Implement these as scripts or platform command invocations:
 
-- Normalize OpenClaw task payloads into `RunContext`.
+- Normalize platform task payloads into `RunContext` (OpenClaw, Hermes, Claude, Cursor, Codex).
+- Initialize, read, merge, and check completion of `loop_state.json`.
 - Validate required environment variables and destination IDs.
 - Validate JSON schemas for `RunContext`, `NewsItem`, approval payloads, and archive records.
 - Compute item IDs, payload hashes, and idempotency keys.
@@ -60,6 +61,7 @@ Do not pass the full run history to every subagent. Pass only:
 These utility scripts provide deterministic building blocks:
 
 - `scripts/normalize_run_context.py`: normalize platform payload and environment into a `RunContext`.
+- `scripts/loop_state.py`: durable loop state init/read/write/check-done.
 - `scripts/hash_payload.py`: canonicalize JSON or text and compute SHA-256 payload hashes.
 - `scripts/validate_news_payload.py`: validate a draft report JSON before approval.
 - `scripts/send_feishu_message.py`: send Feishu text messages through `lark-cli api`.

@@ -2,67 +2,103 @@
 
 ## Goal
 
-Build an OpenClaw scheduled AI news workflow that coordinates deterministic scripts and multiple specialist subagents, requests human approval in Feishu, archives approved content to Feishu Base, builds a Feishu card from archived Base data, and publishes the card to a Feishu group.
+Build a **loop-engineered**, **Horizon-inspired** daily AI news workflow that:
 
-The architecture follows one rule: scripts execute deterministic events, agents decide uncertain events. The main agent stitches inputs together, calls scripts, reads structured results, and chooses the next action.
+1. fetches and deduplicates multi-source candidates,
+2. scores, filters, enriches, and drafts a Chinese report,
+3. verifies with maker-checker subagents and deterministic scripts,
+4. requests human approval in Feishu,
+5. archives approved content to Feishu Base,
+6. publishes a card built only from archived read-back data,
+7. persists durable state in `loop_state.json` across platform runs.
 
-## Component View
+Horizon reference: [github.com/Thysrael/Horizon](https://github.com/Thysrael/Horizon)
+
+## Layered View
 
 ```mermaid
-flowchart LR
-  A["OpenClaw cron / manual run"] --> B["OpenClaw runtime adapter"]
-  B --> P["Deterministic scripts"]
-  P --> C["Main agent"]
-  C --> P
-  C --> D["Task board / message envelope"]
-  C --> R["Memory query script"]
-  R --> C
-  D --> E["Source collector"]
-  D --> F["Source verifier"]
-  D --> G["Deduper and ranker"]
-  D --> H["Industry analyst"]
-  D --> I["Report editor"]
-  D --> J["Quality reviewer"]
-  D --> X["Archive record builder"]
-  E <-. peer request .-> F
-  F <-. peer request .-> G
-  G <-. peer request .-> H
-  J --> C
-  C --> Q["Schema/hash/quality scripts"]
-  Q --> C
-  C --> K["lark-cli approval message"]
-  K --> L{"Admin decision"}
-  L -- Approved --> X
-  X --> N["lark-cli Base archive"]
-  N --> O["Feishu Base"]
-  O --> Z["Fetch archived Base records"]
-  Z --> Y["Build Feishu card from fetched fields"]
-  Y --> M["lark-cli card publish"]
-  L -- Rejected with feedback --> C
+flowchart TB
+  subgraph schedule["Schedule Layer"]
+    CRON[OpenClaw cron / Claude loop / Codex automation]
+  end
+
+  subgraph loop["Loop Layer"]
+    LS[loop_state.json]
+    NA[normalize_run_context]
+    CRON --> NA --> LS
+  end
+
+  subgraph horizon["Horizon Pipeline"]
+  direction LR
+    F[fetch] --> UD[url_dedupe] --> SC[score] --> FI[filter]
+    FI --> TD[topic_dedupe] --> BA[balance] --> EN[enrich]
+    EN --> DR[draft] --> RV[review]
+  end
+
+  subgraph agents["Agent Layer"]
+    C[source_collector]
+    V[source_verifier]
+    R[dedupe_ranker]
+    A[industry_analyst]
+    E[report_editor]
+    Q[quality_reviewer]
+  end
+
+  subgraph gov["Governance Layer"]
+    AP[approval_pending]
+    AR[archiving]
+    PB[publishing]
+  end
+
+  LS --> horizon
+  F --> C
+  UD --> R
+  SC --> R
+  TD --> R
+  BA --> R
+  EN --> A
+  DR --> E
+  RV --> Q
+  Q --> AP --> AR --> PB
+  PB --> LS
 ```
+
+## Platform Roles
+
+| Platform | Role in this architecture |
+| --- | --- |
+| OpenClaw | default orchestrator, cron, Feishu connector host |
+| Hermes | optional executor for fetch/rank/enrich sub-loops |
+| Claude / Cursor / Codex | standalone or dev orchestrators using the same loop contract |
+
+See [platform-adapters.md](platform-adapters.md).
 
 ## Main Agent Responsibilities
 
-The main agent is the only role allowed to advance workflow state. It owns:
+The orchestrator is the only role allowed to advance workflow state. It owns:
 
-- OpenClaw run context normalization.
-- Deterministic script calls for schema validation, hashing, idempotency, payload freezing, Feishu API submission, and archive writes.
-- Subagent task decomposition, message routing, dependency control, and retry policy.
-- On-demand memory queries before assigning each role.
-- Final quality review across all returned evidence.
-- Human approval request and interpretation of approval callbacks.
-- Archive authorization, card-build authorization, and publish authorization.
-- Incident reporting when source access, Feishu APIs, or platform callbacks fail.
+- `RunContext` normalization and `loop_state` init/read/write
+- deterministic script calls for validation, hashing, idempotency, Feishu APIs
+- Horizon stage sequencing and subagent dispatch
+- on-demand memory queries before each role
+- maker-checker enforcement (`quality_reviewer` ≠ `report_editor`)
+- human approval interpretation and publish authorization
+- iteration caps and no-progress escalation
+
+Hermes, when used, returns structured JSON for a single bounded role. It does not advance global `loop_state` unless explicitly designated as orchestrator.
 
 ## State Machine
 
-Use this explicit state machine for idempotency and recovery:
+Horizon processing states:
 
 ```text
 scheduled
-  -> collecting
-  -> verifying
-  -> ranking
+  -> fetching
+  -> url_deduping
+  -> scoring
+  -> topic_deduping
+  -> balancing
+  -> enriching
   -> drafting
   -> internal_review
   -> approval_pending
@@ -76,7 +112,7 @@ scheduled
 Rejection path:
 
 ```text
-approval_pending -> rejected -> replanning -> collecting|drafting
+approval_pending -> rejected -> replanning -> fetching|scoring|drafting
 ```
 
 Failure path:
@@ -86,22 +122,29 @@ any_state -> failed_retriable -> same_state
 any_state -> failed_terminal -> notify_admin
 ```
 
+Persist every transition in `data/runs/<job_id>/loop_state.json`.
+
 ## Data Model
 
 ### RunContext
 
 ```json
 {
-  "job_id": "ai-news-2026-06-04-asia-shanghai",
+  "job_id": "ai-news-2026-06-17-asia-shanghai",
   "platform": "openclaw",
+  "executor": "openclaw",
   "trigger_type": "scheduled",
-  "scheduled_at": "2026-06-04T09:00:00+08:00",
-  "window_start": "2026-06-03T09:00:00+08:00",
-  "window_end": "2026-06-04T09:00:00+08:00",
+  "scheduled_at": "2026-06-17T09:00:00+08:00",
+  "window_start": "2026-06-16T09:00:00+08:00",
+  "window_end": "2026-06-17T09:00:00+08:00",
   "timezone": "Asia/Shanghai",
   "attempt": 1,
   "max_attempts": 3,
   "trace_id": "platform-trace-id",
+  "max_items": 8,
+  "language": "zh-CN",
+  "config_path": "data/config.json",
+  "loop_state_path": "data/runs/ai-news-2026-06-17-asia-shanghai/loop_state.json",
   "approval_user_id": "ou_xxx",
   "publish_chat_id": "oc_xxx",
   "base_app_token": "base_xxx",
@@ -109,30 +152,63 @@ any_state -> failed_terminal -> notify_admin
 }
 ```
 
-### NewsItem
+### ContentItem / NewsItem
+
+Horizon-compatible item with skill extensions:
 
 ```json
 {
-  "id": "stable_hash_of_primary_url_or_cluster",
+  "id": "rss:openai-news:entry-123",
+  "source_type": "rss",
   "headline": "string",
-  "summary": "string",
-  "category": "model|product|funding|policy|research|infra|enterprise|security|other",
-  "region": "global|china|us|eu|other",
+  "url": "https://...",
   "published_at": "ISO-8601",
-  "primary_source_url": "https://...",
-  "supporting_source_urls": ["https://..."],
-  "entities": ["OpenAI", "Google DeepMind"],
-  "impact_score": 1,
-  "novelty_score": 1,
+  "metadata": { "category": "model", "merged_sources": ["rss", "hackernews"] },
+  "ai_score": 7.5,
+  "ai_summary": "string",
+  "ai_tags": ["llm"],
+  "impact_score": 4,
+  "novelty_score": 3,
+  "evidence_score": 4,
   "confidence": "high|medium|low",
-  "verification_notes": "short evidence note",
-  "risks": ["unconfirmed funding amount"]
+  "summary": "Chinese summary",
+  "primary_source_url": "https://...",
+  "supporting_source_urls": [],
+  "entities": ["OpenAI"],
+  "verification_notes": "string",
+  "risks": []
+}
+```
+
+### LoopState
+
+```json
+{
+  "job_id": "string",
+  "platform": "openclaw",
+  "executor": "openclaw",
+  "stage": "filtering",
+  "stage_history": ["scheduled", "fetching"],
+  "iteration_count": 0,
+  "max_iterations": 3,
+  "candidate_count": 24,
+  "verified_count": 14,
+  "shortlist_count": 8,
+  "payload_hash": null,
+  "approval_status": null,
+  "archive_record_ids": [],
+  "publish_message_id": null,
+  "card_hash": null,
+  "last_error": null,
+  "blocking_issue_hash": null,
+  "no_progress_streak": 0,
+  "updated_at": "ISO-8601"
 }
 ```
 
 ## Collaboration Pattern
 
-Use a shared task board with message envelopes. Every subagent return should be machine-readable first and prose second.
+Use a shared task board with message envelopes. Every subagent return is machine-readable first, prose second.
 
 ```json
 {
@@ -148,86 +224,78 @@ Use a shared task board with message envelopes. Every subagent return should be 
 }
 ```
 
-Subagents may communicate through `request_peer_input` and `peer_response` envelopes. The main agent routes these messages and trims context so each role sees only the relevant item IDs, evidence, question, and answer.
+The orchestrator routes peer messages and trims context to relevant item IDs only.
 
 ## Quality Gates
 
-The main agent must reject the draft before Feishu approval if any gate fails:
+Reject before Feishu approval if any gate fails:
 
-- Every item has a working primary source URL.
-- Every item is within the configured date window or clearly marked as a follow-up.
-- Important claims are supported by primary or highly credible secondary sources.
-- Duplicate stories are clustered into one item.
-- Headlines do not overstate the source evidence.
-- The report has enough coverage diversity; avoid all items coming from one vendor unless the news day justifies it.
-- Low-confidence items are either removed or placed in a clearly labeled "待确认" section.
-- The final Feishu card is generated from archived Base fields, concise enough for group reading, and preserves source links.
+- every item has a working primary source URL
+- every item is inside the configured date window or labeled as follow-up
+- important claims have primary or highly credible secondary support
+- duplicate stories are clustered (Horizon URL + topic dedupe)
+- headlines do not overstate evidence
+- coverage is diverse enough; avoid single-vendor dominance unless justified
+- low-confidence items are removed or placed in `待确认`
+- final card is built from archived Base fields and is concise for group reading
 
-## Retry and Replanning
+## Retry And Replanning
 
-Retry only the smallest necessary part:
+Retry only the smallest necessary slice:
 
-- Source fetch failure: rerun collector with backup source channels.
-- Verification failure: ask collector for alternative sources or remove the item.
-- Reviewer failure: rerun editor with reviewer notes.
-- Admin rejection: use administrator feedback as the primary replanning instruction.
-- Feishu Base archive failure after approval: do not publish; retry archive and notify admin if it remains blocked.
-- Feishu card build failure after archive: do not republish or rewrite Base records; fix card data or rerun card build.
-- Feishu publish failure after card build: retry publishing with the same card hash and idempotency key.
+| Failure | Rerun |
+| --- | --- |
+| source fetch | `source_collector` with backup channels |
+| verification | collector replacement or item removal |
+| reviewer fail | `report_editor` with reviewer notes |
+| admin rejection | stages named by `replan_advisor` |
+| archive fail after approval | archive only; never publish |
+| card build fail | card build only |
+| publish fail | publish retry with same `card_hash` |
 
-Use `job_id + item_id` as the archive idempotency key and `job_id + card_hash` as the publish idempotency key.
+Idempotency keys:
+
+- archive: `job_id + item_id`
+- publish: `job_id + card_hash`
+- approval: `payload_hash`
+
+Increment `iteration_count` on admin rejection. Stop when `iteration_count >= max_iterations` or no-progress streak hits threshold.
 
 ## Observability
 
-Log or persist these events:
+Log or persist in `loop_state` and platform run output:
 
-- Run started and normalized context.
-- Subagent task assignment and completion status.
-- Candidate count, verified count, final item count.
-- Internal review pass/fail reasons.
-- Feishu approval request ID and callback decision.
-- Feishu Base record IDs.
-- Feishu card hash.
-- Feishu group message ID.
-- Failure reason, retry count, and terminal status.
+- normalized `RunContext`
+- stage transitions and durations
+- candidate / verified / shortlist counts
+- reviewer pass/fail and `blocking_issue_hash`
+- approval request and decision
+- Base record IDs, card hash, group message ID
+- terminal failure reason and retry count
 
 ## Deterministic Script Layer
 
-Use scripts for:
+Scripts own:
 
-- OpenClaw input normalization.
-- Required field and schema validation.
-- URL/date/window checks that can be computed from available data.
-- Duplicate ID and payload hash generation.
-- Idempotency key generation.
-- Feishu approval/publish/archive API calls.
-- Feishu message payload assembly when using fixed templates.
-- Feishu Base record construction and write retries.
-- Feishu Base record read-back and card construction from fetched fields.
+- platform payload normalization (multi-platform)
+- loop state init/read/write/check-done
+- schema validation, URL/date/window checks
+- payload hash and idempotency keys
+- Feishu approval, archive, read-back, card build, publish
+- on-demand memory retrieval
 
-Use agents for:
+Agents own:
 
-- Source discovery and source credibility judgment.
-- Deciding whether secondary evidence is sufficient.
-- Ranking importance when multiple credible items compete.
-- Explaining why an item matters.
-- Rewriting after admin feedback.
+- source discovery and credibility judgment
+- AI scoring and topic clustering
+- significance explanation and Chinese rewriting
+- replan interpretation after rejection
 
-See [script-boundaries.md](script-boundaries.md) for the detailed division.
-
-## Context And Memory
-
-Do not load all references into every role. Treat memory as queryable context:
-
-- Use `scripts/query_memory.py --query "<role topic>" --top-k 3` before creating a role envelope.
-- Include only the returned snippets that directly affect the current role.
-- Store full run outputs in OpenClaw run logs, Feishu Base, or a configured state store.
-- Put only compact IDs and status summaries on the task board.
-- Ask a second targeted query if a subagent needs more context.
+See [script-boundaries.md](script-boundaries.md).
 
 ## Security Boundaries
 
-- Keep Feishu credentials in platform secrets, not in prompts or archived records.
-- Store source evidence URLs and public facts only.
-- Do not archive administrator private comments unless the organization explicitly wants rejection history in Base.
-- Treat all card callback payloads as untrusted input; validate `job_id`, approver identity, payload hash, and expiry time before continuing.
+- keep Feishu credentials in platform secrets
+- treat callback payloads as untrusted; validate approver, hash, expiry
+- Hermes-reflected skills must not override approval or publish scripts
+- do not archive administrator private comments unless explicitly required

@@ -1,8 +1,31 @@
 # Subagent Contracts
 
+## Horizon Stage Mapping
+
+| Horizon stage | Subagent role | Loop state stage |
+| --- | --- | --- |
+| Fetch | `source_collector` | `fetching` |
+| URL dedupe | `dedupe_ranker` (or script) | `url_deduping` |
+| AI score + filter | `dedupe_ranker` | `scoring`, `balancing` |
+| Topic dedupe | `dedupe_ranker` | `topic_deduping` |
+| Verify | `source_verifier` | during `scoring` / `url_deduping` |
+| Enrich | `industry_analyst` | `enriching` |
+| Summarize | `report_editor` | `drafting` |
+| Review | `quality_reviewer` | `internal_review` |
+| Archive fields | `archive_record_builder` | `archiving` |
+| Replan | `replan_advisor` | `replanning` |
+
+Hermes may execute `source_collector`, `dedupe_ranker`, and `industry_analyst` slices when dispatched by the orchestrator. The orchestrator retains approval and publish authority.
+
 ## Role Summary
 
-The main agent coordinates these roles. Use actual subagent tools when available. If the runtime has no subagent tool, run each role as an isolated labeled pass with the same inputs and output schema.
+The orchestrator coordinates these roles. Use platform subagent tools when available:
+
+- OpenClaw subagent tool
+- Claude Code / Cursor `Task` tool
+- Hermes ACP delegation for bounded execution slices
+
+If no subagent tool exists, run each role as an isolated labeled pass with the same schema.
 
 Subagents should stay atomic. Each role receives only the relevant slice of context and must return structured data. Do not ask a subagent to perform deterministic work that a script can handle. Subagents may collaborate through main-agent-routed peer messages.
 
@@ -17,20 +40,20 @@ Subagents should stay atomic. Each role receives only the relevant slice of cont
 | `archive_record_builder` | Convert approved news items into Feishu Base record fields. | Archive record payloads ready for script execution. |
 | `replan_advisor` | Interpret review or administrator rejection feedback. | Minimal rerun plan for the main agent. |
 
-## Main Agent Protocol
+## Orchestrator Protocol
 
-The main agent should:
+The orchestrator should:
 
-1. Create a task envelope for each role with `job_id`, `RunContext`, required inputs, output schema, and deadline.
-2. Query only the memory snippets needed for that role with `scripts/query_memory.py`.
-3. Call deterministic scripts before and after role execution when inputs or outputs need normalization, validation, hashing, or idempotency keys.
-4. Wait for role returns and inspect `status`, `risks`, `peer_requests`, and `next_request`.
-5. Route peer messages between subagents only when the question is atomic and bounded.
-6. Ask follow-up questions to the same role when output is incomplete.
-7. Reroute tasks when one role uncovers a problem, such as asking `source_collector` for replacement sources after `source_verifier` rejects a candidate.
-8. Run `quality_reviewer` after editing and then perform a final main-agent audit before human approval.
-9. Freeze the approval payload hash before asking the administrator.
-10. After approval, archive approved items first, then build the group card from archived Base fields. Only that card can be sent to the group.
+1. Read `loop_state.json` before dispatching any role.
+2. Create a task envelope with `job_id`, `RunContext`, required inputs, output schema, and `loop_state_path`.
+3. Query role memory with `scripts/query_memory.py`.
+4. Call deterministic scripts before and after role execution.
+5. Write `loop_state` after each verified stage transition.
+6. Route peer messages only for atomic bounded questions.
+7. Enforce maker-checker: never skip `quality_reviewer` before approval.
+8. Freeze `payload_hash` before administrator review.
+9. After approval, archive first; build the group card only from Base read-back.
+10. On Hermes handoff, pass only the envelope and expect structured JSON back.
 
 ## Message Envelope
 
@@ -130,14 +153,16 @@ Verifier guidance:
 
 ## Dedupe Ranker
 
-Score each verified cluster from 1-5:
+Score each verified cluster using Horizon-style 0-10 `ai_score` plus 1-5 component scores:
 
-- `impact_score`: expected importance to AI industry practitioners.
-- `novelty_score`: how new or non-obvious the information is.
-- `evidence_score`: source credibility and corroboration.
-- `audience_score`: relevance to the target Feishu group.
+- `impact_score`: importance to AI practitioners
+- `novelty_score`: how new or non-obvious
+- `evidence_score`: source credibility and corroboration
+- `audience_score`: relevance to the target Feishu group
 
-Return the top items sorted by weighted score. Default weighting:
+Filter with `ai_score_threshold` from `data/config.json` (default 6.0). Apply `category_groups` and `max_items` for balanced digest when configured.
+
+Default weighting for final rank within shortlist:
 
 ```text
 impact 35%, evidence 25%, audience 25%, novelty 15%

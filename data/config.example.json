@@ -1,0 +1,92 @@
+{
+  "version": "2.0",
+  "ai": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-20250514",
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "temperature": 0.3,
+    "max_tokens": 4096,
+    "languages": ["zh-CN"]
+  },
+  "sources": {
+    "rss": [
+      {
+        "name": "OpenAI News",
+        "url": "https://openai.com/news/rss.xml",
+        "enabled": true,
+        "category": "model"
+      },
+      {
+        "name": "Google AI Blog",
+        "url": "https://blog.google/technology/ai/rss/",
+        "enabled": true,
+        "category": "research"
+      }
+    ],
+    "hackernews": {
+      "enabled": true,
+      "fetch_top_stories": 30,
+      "min_score": 100
+    },
+    "reddit": {
+      "enabled": false,
+      "subreddits": [
+        {
+          "subreddit": "MachineLearning",
+          "enabled": true,
+          "sort": "hot",
+          "fetch_limit": 15,
+          "min_score": 20
+        }
+      ]
+    },
+    "official": {
+      "enabled": true,
+      "urls": [
+        "https://www.anthropic.com/news",
+        "https://deepmind.google/discover/blog/"
+      ]
+    },
+    "search": {
+      "enabled": true,
+      "queries": [
+        "AI model release last 24 hours",
+        "AI startup funding announcement"
+      ]
+    }
+  },
+  "filtering": {
+    "ai_score_threshold": 6.0,
+    "time_window_hours": 24,
+    "max_items": 8,
+    "category_groups": {
+      "models": {
+        "limit": 3,
+        "categories": ["model", "research"]
+      },
+      "products": {
+        "limit": 3,
+        "categories": ["product", "enterprise", "infra"]
+      },
+      "policy": {
+        "limit": 2,
+        "categories": ["policy", "security", "funding"]
+      }
+    },
+    "default_group": "other",
+    "default_group_limit": 2
+  },
+  "delivery": {
+    "require_human_approval": true,
+    "archive_before_publish": true,
+    "feishu": {
+      "enabled": true,
+      "platform": "lark"
+    }
+  },
+  "loop": {
+    "max_iterations": 3,
+    "max_subagent_calls_per_stage": 2,
+    "no_progress_threshold": 2
+  }
+}

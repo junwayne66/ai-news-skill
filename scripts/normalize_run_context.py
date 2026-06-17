@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize OpenClaw scheduled payloads into a RunContext JSON object."""
+"""Normalize platform scheduled payloads into a RunContext JSON object."""
 
 from __future__ import annotations
 
@@ -12,12 +12,17 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 
+SUPPORTED_PLATFORMS = {"openclaw", "hermes", "claude", "cursor", "codex"}
+
 REQUIRED_DESTINATION_ENV = [
     "FEISHU_NEWS_ADMIN_ID",
     "FEISHU_GROUP_CHAT_ID",
     "FEISHU_BASE_APP_TOKEN",
     "FEISHU_BASE_TABLE_ID",
 ]
+
+# Hermes executor slices may run before delivery IDs are needed.
+PLATFORMS_SKIP_DESTINATION_CHECK = {"hermes"}
 
 
 def parse_iso_datetime(value: str, tz: ZoneInfo) -> datetime:
@@ -63,9 +68,21 @@ def main() -> int:
 
     payload = read_payload(args.payload)
     platform = env_or_payload("AI_NEWS_PLATFORM", payload, "openclaw")
-    if platform != "openclaw":
-        print(json.dumps({"ok": False, "error": "AI_NEWS_PLATFORM must be openclaw"}))
+    if platform not in SUPPORTED_PLATFORMS:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "unsupported_platform",
+                    "platform": platform,
+                    "supported": sorted(SUPPORTED_PLATFORMS),
+                },
+                ensure_ascii=False,
+            )
+        )
         return 2
+
+    executor = env_or_payload("AI_NEWS_EXECUTOR", payload, platform)
 
     timezone_name = env_or_payload("AI_NEWS_TIMEZONE", payload, "Asia/Shanghai")
     tz = ZoneInfo(timezone_name)
@@ -80,7 +97,9 @@ def main() -> int:
     window_delta = parse_window(env_or_payload("AI_NEWS_WINDOW", payload, "24h") or "24h")
     window_start = scheduled_at - window_delta
 
-    missing = [name for name in REQUIRED_DESTINATION_ENV if not env_or_payload(name, payload)]
+    missing = []
+    if platform not in PLATFORMS_SKIP_DESTINATION_CHECK:
+        missing = [name for name in REQUIRED_DESTINATION_ENV if not env_or_payload(name, payload)]
     if missing:
         print(json.dumps({"ok": False, "error": "missing_required_fields", "fields": missing}, ensure_ascii=False))
         return 2
@@ -89,9 +108,13 @@ def main() -> int:
     timezone_slug = timezone_name.lower().replace("/", "-").replace("_", "-")
     job_id = payload.get("job_id") or f"ai-news-{local_date}-{timezone_slug}"
 
+    config_path = env_or_payload("AI_NEWS_CONFIG", payload, "data/config.json")
+    loop_state_path = f"data/runs/{job_id}/loop_state.json"
+
     context = {
         "job_id": job_id,
         "platform": platform,
+        "executor": executor,
         "trigger_type": payload.get("trigger_type", "scheduled"),
         "scheduled_at": scheduled_at.isoformat(),
         "window_start": window_start.isoformat(),
@@ -106,6 +129,8 @@ def main() -> int:
         "publish_chat_id": env_or_payload("FEISHU_GROUP_CHAT_ID", payload),
         "base_app_token": env_or_payload("FEISHU_BASE_APP_TOKEN", payload),
         "base_table_id": env_or_payload("FEISHU_BASE_TABLE_ID", payload),
+        "config_path": config_path,
+        "loop_state_path": loop_state_path,
     }
     print(json.dumps({"ok": True, "run_context": context}, ensure_ascii=False, sort_keys=True))
     return 0
