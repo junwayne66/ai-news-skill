@@ -5,10 +5,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-SSH_HOST="${SSH_HOST:-spark}"
+SSH_HOST="${SSH_HOST:-remote-spark}"
 REMOTE_SKILL_DIR="${REMOTE_SKILL_DIR:-/home/wayne/.share/skills/ai-news}"
 REMOTE_USER="${REMOTE_USER:-wayne}"
-FALLBACK_HOST="${SSH_FALLBACK_HOST:-remote-spark}"
+FALLBACK_HOST="${SSH_FALLBACK_HOST:-spark}"
 
 log() { printf '[deploy] %s\n' "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }

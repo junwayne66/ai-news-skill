@@ -4,12 +4,14 @@ Use this reference when deploying, updating, or running end-to-end tests for `ai
 
 ## SSH Login
 
-Prefer the intranet host first. Use the external alias only when intranet is unreachable.
+Prefer the external host `remote-spark` when deploying from outside the intranet. Use `spark` only when on the same LAN.
 
 | Environment | Command | Auth |
 | --- | --- | --- |
-| Intranet (preferred) | `ssh spark` | passwordless SSH |
-| External network | `ssh remote-spark` | passwordless SSH |
+| External network (preferred for deploy) | `ssh remote-spark` | passwordless SSH (`~/.ssh/config` on operator Mac) |
+| Intranet | `ssh spark` | passwordless SSH |
+
+Operator Mac SSH config path: `/Users/btkj_wayne/.ssh/config`
 
 Cloud Agent environments do not inherit your local `~/.ssh/config`. Provide hostnames via environment variables or create `~/.ssh/config` in the agent VM:
 
