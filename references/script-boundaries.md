@@ -18,7 +18,8 @@ Implement these as scripts or platform command invocations:
 - Validate JSON schemas for `RunContext`, `NewsItem`, approval payloads, and archive records.
 - Compute item IDs, payload hashes, and idempotency keys.
 - Check date-window inclusion when `published_at` is available.
-- Verify URL syntax and canonicalize URLs.
+- Fetch configured deterministic sources and merge outputs (`fetch_sources`, `fetch_rss`, `fetch_hackernews`).
+- Merge cross-source URL duplicates (`url_dedupe`).
 - Build fixed Feishu card/message JSON from approved templates.
 - Send Feishu approval requests, group messages, and Base writes through `lark-cli`.
 - Validate Feishu callback signature, operator ID, expiry, and payload hash.
@@ -28,7 +29,7 @@ Implement these as scripts or platform command invocations:
 
 Use agents or subagents for:
 
-- Searching for candidate news from broad or changing sources.
+- Searching for candidate news from broad or changing sources **after** deterministic `fetch_sources` + `url_dedupe`.
 - Judging source credibility when sources conflict.
 - Deciding whether a secondary source is sufficient.
 - Ranking impact, novelty, and audience relevance.
@@ -64,6 +65,10 @@ These utility scripts provide deterministic building blocks:
 - `scripts/loop_state.py`: durable loop state init/read/write/check-done.
 - `scripts/hash_payload.py`: canonicalize JSON or text and compute SHA-256 payload hashes.
 - `scripts/validate_news_payload.py`: validate a draft report JSON before approval.
+- `scripts/fetch_sources.py`: orchestrate deterministic source fetch from config.
+- `scripts/fetch_rss.py`: fetch RSS/Atom feeds into normalized items.
+- `scripts/fetch_hackernews.py`: fetch Hacker News stories into normalized items.
+- `scripts/url_dedupe.py`: merge duplicate URLs across deterministic fetch outputs.
 - `scripts/send_feishu_message.py`: send Feishu text messages through `lark-cli api`.
 - `scripts/archive_feishu_base.py`: write Feishu Base records through `lark-cli api`.
 - `scripts/fetch_feishu_base_records.py`: read archived Feishu Base records through `lark-cli api`.

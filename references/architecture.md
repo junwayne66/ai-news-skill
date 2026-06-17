@@ -30,13 +30,13 @@ flowchart TB
 
   subgraph horizon["Horizon Pipeline"]
   direction LR
-    F[fetch] --> UD[url_dedupe] --> SC[score] --> FI[filter]
+    FS[fetch_sources] --> UD[url_dedupe] --> SC[score] --> FI[filter]
     FI --> TD[topic_dedupe] --> BA[balance] --> EN[enrich]
     EN --> DR[draft] --> RV[review]
   end
 
   subgraph agents["Agent Layer"]
-    C[source_collector]
+    C[source_collector gap fill]
     V[source_verifier]
     R[dedupe_ranker]
     A[industry_analyst]
@@ -51,7 +51,7 @@ flowchart TB
   end
 
   LS --> horizon
-  F --> C
+  FS --> C
   UD --> R
   SC --> R
   TD --> R

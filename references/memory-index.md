@@ -6,7 +6,8 @@ Use `scripts/query_memory.py` to load only the snippets needed for the current t
 
 | Need | Query |
 | --- | --- |
-| Horizon pipeline stages | `horizon fetch dedupe score enrich` |
+| Script-first fetch pipeline | `fetch_sources url_dedupe prefetched collector` |
+| Deterministic source collectors | `fetch_rss fetch_hackernews fetch_sources` |
 | Loop engineering stop rules | `loop state termination maker checker` |
 | Platform adapters | `openclaw hermes claude platform adapter` |
 | OpenClaw installation and cron | `openclaw install cron skill` |
@@ -28,7 +29,7 @@ Agents should request no more than 3-5 snippets per step. If a snippet reveals t
 
 | Role | Start with |
 | --- | --- |
-| `source_collector` | `horizon fetch sources rss hackernews` |
+| `source_collector` | `prefetched_items discovery_policy official search gap fill` |
 | `dedupe_ranker` | `horizon dedupe score threshold category` |
 | `industry_analyst` | `horizon enrich significance` |
 | `quality_reviewer` | `quality gates loop maker checker` |

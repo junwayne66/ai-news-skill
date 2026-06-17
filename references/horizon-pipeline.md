@@ -28,8 +28,8 @@ Horizon's `HorizonOrchestrator.run()` implements this as:
 | Horizon stage | Skill stage | Owner | Output artifact |
 | --- | --- | --- | --- |
 | Config load | `normalize_run_context` + `data/config.json` | Script | `RunContext` |
-| Fetch | `fetching` | `source_collector` subagent (+ optional RSS/HN scripts later) | `CandidateItem[]` |
-| URL dedupe | `url_deduping` | Script or `dedupe_ranker` | `ContentItem[]` with stable IDs |
+| Fetch | `fetching` | `fetch_sources` + `url_dedupe` scripts, then `source_collector` gap fill | `CandidateItem[]` |
+| URL dedupe | `url_deduping` | `url_dedupe.py` script | `ContentItem[]` with stable IDs |
 | AI score | `scoring` | `dedupe_ranker` | items with `impact_score`, `novelty_score`, `evidence_score` |
 | Threshold filter | `filtering` | Script `validate_news_payload.py` + main agent | shortlist within `max_items` |
 | Topic dedupe | `topic_deduping` | `dedupe_ranker` | clustered items |
@@ -156,11 +156,22 @@ Horizon delivers directly after summarization. This skill adds a governance laye
 
 Never skip the governance layer to mimic Horizon's direct webhook delivery.
 
-## Optional Deterministic Fetch Layer
+## Deterministic Fetch Layer
 
-Future scripts may implement Horizon-style fetchers for stable sources:
+Implemented scripts:
 
-- `scripts/fetch_rss.py`
-- `scripts/fetch_hackernews.py`
+- `scripts/fetch_sources.py` — orchestrates enabled deterministic sources from config
+- `scripts/fetch_rss.py` — RSS/Atom fetch
+- `scripts/fetch_hackernews.py` — Hacker News fetch
+- `scripts/url_dedupe.py` — cross-source URL merge
 
-Until those exist, `source_collector` owns fetch for all sources. When a fetch script exists, prefer the script and let the collector handle discovery-only gaps.
+Orchestrator flow:
+
+```text
+fetch_sources.py
+  -> url_dedupe.py
+  -> source_collector (official/search gap fill only)
+  -> source_verifier
+```
+
+`source_collector` must not re-fetch RSS/HN when prefetched items already exist. Hermes may execute `fetch_sources.py` as a bounded executor slice, but the orchestrator still owns state transitions and approval gates.

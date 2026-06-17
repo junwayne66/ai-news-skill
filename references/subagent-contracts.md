@@ -4,8 +4,8 @@
 
 | Horizon stage | Subagent role | Loop state stage |
 | --- | --- | --- |
-| Fetch | `source_collector` | `fetching` |
-| URL dedupe | `dedupe_ranker` (or script) | `url_deduping` |
+| Fetch | `fetch_sources` + `url_dedupe` scripts, then `source_collector` gap fill | `fetching`, `url_deduping` |
+| URL dedupe | `url_dedupe` script (primary) | `url_deduping` |
 | AI score + filter | `dedupe_ranker` | `scoring`, `balancing` |
 | Topic dedupe | `dedupe_ranker` | `topic_deduping` |
 | Verify | `source_verifier` | during `scoring` / `url_deduping` |
@@ -31,7 +31,7 @@ Subagents should stay atomic. Each role receives only the relevant slice of cont
 
 | Role | Purpose | Returns |
 | --- | --- | --- |
-| `source_collector` | Discover fresh AI industry news candidates. | Candidate `NewsItem` list with raw evidence. |
+| `source_collector` | Fill discovery gaps after deterministic fetch (`official`, `search`, and other non-script sources). | Additional candidate `NewsItem` list with raw evidence. |
 | `source_verifier` | Validate URLs, dates, source quality, and factual claims. | Verified items, rejected items, risk notes. |
 | `dedupe_ranker` | Cluster duplicates and score impact, novelty, and audience relevance. | Ranked shortlist with cluster notes. |
 | `industry_analyst` | Explain why each item matters for business, product, research, or policy. | Significance notes and context. |
@@ -85,16 +85,28 @@ The main agent is the router. A subagent should not receive the full task histor
 
 ## Source Collector
 
+The orchestrator must run deterministic fetch scripts before dispatching this role:
+
+```bash
+scripts/fetch_sources.py --config data/config.json --input /tmp/run-context.json --include-collector-candidates > /tmp/prefetched.json
+scripts/url_dedupe.py --input /tmp/prefetched.json > /tmp/prefetched-deduped.json
+```
+
 Input:
 
 ```json
 {
   "run_context": {},
-  "source_policy": {
+  "prefetched_items": [],
+  "collector_candidates": [],
+  "discovery_policy": {
+    "official": {"enabled": true, "urls": ["https://www.anthropic.com/news"]},
+    "search": {"enabled": true, "queries": ["AI model release last 24 hours"]},
     "preferred_sources": ["official blogs", "company newsrooms", "regulator sites", "research labs", "credible tech media"],
     "avoid_sources": ["unsourced social posts", "content farms", "duplicate reposts"]
   },
-  "max_candidates": 30
+  "max_candidates": 30,
+  "max_additional_candidates": 12
 }
 ```
 
@@ -103,7 +115,8 @@ Output:
 ```json
 {
   "status": "ok",
-  "candidates": [
+  "prefetched_count": 18,
+  "additional_candidates": [
     {
       "headline": "string",
       "raw_summary": "string",
@@ -111,15 +124,21 @@ Output:
       "published_at": "ISO-8601 or null",
       "source_name": "string",
       "category_guess": "model|product|funding|policy|research|infra|enterprise|security|other",
-      "why_candidate": "string"
+      "why_candidate": "string",
+      "prefetched": false
     }
   ],
+  "candidates": [],
   "coverage_notes": "string"
 }
 ```
 
 Collector guidance:
 
+- Do not re-fetch RSS/Hacker News when `prefetched_items` already contains them.
+- Only discover from `official` and `search` (or other non-deterministic channels) in `discovery_policy`.
+- Skip URLs already present in `prefetched_items` after `url_dedupe`.
+- Merge `prefetched_items` and `additional_candidates` into final `candidates` without duplicate primary URLs.
 - Prefer primary sources. Use credible media to discover leads, then look for primary confirmation.
 - Include funding, product launches, model releases, policy/regulation, enterprise adoption, chips/infrastructure, safety/security, and high-impact research.
 - Do not include an item only because it is viral.

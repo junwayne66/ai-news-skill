@@ -406,7 +406,8 @@ Use this operating model:
 
 ```text
 main_task_agent
-  -> source_collector subagent
+  -> fetch_sources.py + url_dedupe.py (deterministic prefetch)
+  -> source_collector subagent (official/search gap fill only)
   -> source_verifier subagent
   -> dedupe_ranker subagent
   -> industry_analyst subagent
@@ -435,6 +436,7 @@ Send this prompt to the target OpenClaw agent:
 
 ```text
 Use $ai-news to run a dry-run daily AI industry news workflow for the previous 24 hours.
+Use scripts/fetch_sources.py and scripts/url_dedupe.py before source_collector.
 Use the main task agent to decompose work and atomic subagents for uncertain tasks.
 Use deterministic scripts for context normalization, validation, hash, Feishu approval notification, Base archive, Base read-back, Feishu card build, and card send.
 Prepare the administrator approval draft, but do not send to the group unless approval and Base archive/read-back have succeeded.

@@ -50,8 +50,8 @@ config → fetch → url_dedupe → score → filter → topic_dedupe → balanc
 
 | Stage | Owner |
 | --- | --- |
-| `fetching` | `source_collector` |
-| `url_deduping` | script or `dedupe_ranker` |
+| `fetching` | `scripts/fetch_sources.py` → `scripts/url_dedupe.py` → `source_collector` (gap fill only) |
+| `url_deduping` | `scripts/url_dedupe.py` (primary) or `dedupe_ranker` (fallback) |
 | `scoring`, `topic_deduping`, `balancing` | `dedupe_ranker` |
 | `enriching` | `industry_analyst` |
 | `drafting` | `report_editor` |
@@ -108,16 +108,21 @@ If required secrets or destination IDs are missing for the active platform, stop
 2. `scripts/loop_state.py init --job-id <id> --platform <platform>`
 3. Load config from `data/config.json` (copy from `data/config.example.json` if needed)
 4. `scripts/query_memory.py` before each subagent dispatch
-5. Advance the Horizon pipeline stages in [references/subagent-contracts.md](references/subagent-contracts.md)
-6. After each verified stage, `scripts/loop_state.py write --job-id <id>` with updated counts and `stage`
-7. `scripts/validate_news_payload.py` before review
-8. `quality_reviewer` maker-checker pass; main agent audits [references/architecture.md](references/architecture.md) quality gates
-9. `scripts/hash_payload.py` → freeze approval payload
-10. `scripts/send_feishu_approval.py` (card) or `scripts/send_feishu_message.py` (MVP text) → administrator approval
-11. On approval: `archive_record_builder` → `scripts/archive_feishu_base.py` → `scripts/fetch_feishu_base_records.py` → `scripts/build_feishu_card.py` → `scripts/send_feishu_card.py`
-12. Callback path: `scripts/validate_feishu_callback.py` validates signature/operator/expiry/hash before advancing state
-13. On rejection: `replan_advisor` → rerun smallest slice → increment `iteration_count`
-14. Mark `loop_state.stage = completed` only after publish `message_id` exists
+5. **Script-first fetch pipeline** (before `source_collector`):
+   - `scripts/fetch_sources.py --config data/config.json --input <run_context.json> --include-collector-candidates`
+   - `scripts/url_dedupe.py --input <fetch_output.json>`
+   - write `loop_state` with `stage=fetching` and `candidate_count`
+   - dispatch `source_collector` only for `official` / `search` gap fill using `prefetched_items`
+6. Advance remaining Horizon pipeline stages in [references/subagent-contracts.md](references/subagent-contracts.md)
+7. After each verified stage, `scripts/loop_state.py write --job-id <id>` with updated counts and `stage`
+8. `scripts/validate_news_payload.py` before review
+9. `quality_reviewer` maker-checker pass; main agent audits [references/architecture.md](references/architecture.md) quality gates
+10. `scripts/hash_payload.py` → freeze approval payload
+11. `scripts/send_feishu_approval.py` (card) or `scripts/send_feishu_message.py` (MVP text) → administrator approval
+12. On approval: `archive_record_builder` → `scripts/archive_feishu_base.py` → `scripts/fetch_feishu_base_records.py` → `scripts/build_feishu_card.py` → `scripts/send_feishu_card.py`
+13. Callback path: `scripts/validate_feishu_callback.py` validates signature/operator/expiry/hash before advancing state
+14. On rejection: `replan_advisor` → rerun smallest slice → increment `iteration_count`
+15. Mark `loop_state.stage = completed` only after publish `message_id` exists
 
 ## Context And Memory
 

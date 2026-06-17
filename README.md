@@ -60,11 +60,17 @@ ai-news/
     ├── archive_feishu_base.py
     ├── build_feishu_card.py
     ├── fetch_feishu_base_records.py
+    ├── fetch_hackernews.py
+    ├── fetch_rss.py
+    ├── fetch_sources.py           # 编排确定性采集（RSS + HN）
+    ├── url_dedupe.py              # URL 级跨源去重
     ├── hash_payload.py
-    ├── normalize_run_context.py # 多平台 RunContext
+    ├── normalize_run_context.py   # 多平台 RunContext
     ├── query_memory.py
+    ├── send_feishu_approval.py
     ├── send_feishu_card.py
     ├── send_feishu_message.py
+    ├── validate_feishu_callback.py
     └── validate_news_payload.py
 ```
 
@@ -306,6 +312,30 @@ python3 scripts/fetch_hackernews.py --hours 24 --fetch-top-stories 20 --min-scor
 ```
 
 返回结果包含统一字段：`id/source_type/headline/url/published_at/metadata`，可直接作为后续去重和评分输入。
+
+### 2c. 检查脚本优先采集编排（推荐主路径）
+
+```bash
+cat > /tmp/run-context.json <<'JSON'
+{
+  "run_context": {
+    "job_id": "ai-news-test",
+    "window_start": "2026-06-16T09:00:00+08:00",
+    "window_end": "2026-06-17T09:00:00+08:00"
+  }
+}
+JSON
+
+python3 scripts/fetch_sources.py \
+  --config data/config.example.json \
+  --input /tmp/run-context.json \
+  --include-collector-candidates \
+  > /tmp/prefetched.json
+
+python3 scripts/url_dedupe.py --input /tmp/prefetched.json > /tmp/prefetched-deduped.json
+```
+
+然后将 `/tmp/prefetched-deduped.json` 中的 `items` / `collector_candidates` 传给 `source_collector`，由其只补充 `official` / `search` 等非确定性来源。
 
 ### 3. 检查 payload hash
 
