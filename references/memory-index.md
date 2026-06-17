@@ -8,6 +8,7 @@ Use `scripts/query_memory.py` to load only the snippets needed for the current t
 | --- | --- |
 | Remote host SSH and paths | `remote host ssh spark openclaw share skills` |
 | Remote deploy flow | `remote deploy rsync openclaw skills install` |
+| E2E smoke test | `e2e smoke test fetch_sources url_dedupe` |
 | Script-first fetch pipeline | `fetch_sources url_dedupe prefetched collector` |
 | Deterministic source collectors | `fetch_rss fetch_hackernews fetch_sources` |
 | Loop engineering stop rules | `loop state termination maker checker` |

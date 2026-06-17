@@ -11,6 +11,37 @@ Prefer the intranet host first. Use the external alias only when intranet is unr
 | Intranet (preferred) | `ssh spark` | passwordless SSH |
 | External network | `ssh remote-spark` | passwordless SSH |
 
+Cloud Agent environments do not inherit your local `~/.ssh/config`. Provide hostnames via environment variables or create `~/.ssh/config` in the agent VM:
+
+```bash
+# Option A: environment variables (no config file)
+export SSH_HOST_SPARK="<intranet-ip-or-hostname>"
+export SSH_HOST_REMOTE_SPARK="<external-ip-or-hostname>"
+./scripts/remote_deploy.sh
+
+# Option B: ~/.ssh/config in the agent VM
+cat >> ~/.ssh/config <<'EOF'
+Host spark
+  HostName <intranet-ip-or-hostname>
+  User wayne
+  IdentityFile ~/.ssh/id_ed25519
+
+Host remote-spark
+  HostName <external-ip-or-hostname>
+  User wayne
+  IdentityFile ~/.ssh/id_ed25519
+EOF
+chmod 600 ~/.ssh/config
+```
+
+One-command remote deploy (from a machine with SSH access):
+
+```bash
+./scripts/remote_deploy.sh
+```
+
+This syncs the repo, runs `openclaw update`, reinstalls the skill, executes `scripts/e2e_smoke_test.sh`, and sends a WeChat notification when the Weixin channel is configured.
+
 Quick connectivity check:
 
 ```bash
