@@ -132,8 +132,20 @@ Typical runtime variables still required on the remote host:
 - `FEISHU_BASE_APP_TOKEN`
 - `FEISHU_BASE_TABLE_ID`
 - `AI_NEWS_CONFIG` (if not using default `data/config.json`)
+- `WEIXIN_NOTIFY_TARGET` (optional override for WeChat notify recipient)
+- `WEIXIN_NOTIFY_ACCOUNT` (optional override for WeChat account id)
 
-## Agent Rules
+## WeChat Notification (openclaw-weixin)
+
+Proactive WeChat delivery requires a persisted `contextToken` for the target peer.
+Without it, `openclaw message send` may return success while the phone receives nothing.
+
+```bash
+python3 scripts/verify_wechat_notify.py
+python3 scripts/verify_wechat_notify.py --live --message "[ai-news] manual verification"
+```
+
+If `contextToken` is missing, send one inbound message to the bot in WeChat first to refresh the token file under `~/.openclaw/openclaw-weixin/accounts/*.context-tokens.json`.
 
 1. Try `ssh spark` before `ssh remote-spark`.
 2. Treat `/home/wayne/.share/skills` as the canonical shared skill source directory.

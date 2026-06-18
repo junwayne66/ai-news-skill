@@ -214,6 +214,24 @@ else
   skip "openclaw skill installed (openclaw not in PATH)"
 fi
 
+if command -v openclaw >/dev/null 2>&1; then
+  if [ "${AI_NEWS_E2E_WECHAT_LIVE:-0}" = "1" ]; then
+    if "$PYTHON" scripts/verify_wechat_notify.py --live --message "[ai-news] e2e live wechat notify" > /tmp/e2e-wechat.json; then
+      assert_json_ok "wechat notify live" /tmp/e2e-wechat.json
+    else
+      fail "wechat notify live"
+    fi
+  else
+    if "$PYTHON" scripts/verify_wechat_notify.py > /tmp/e2e-wechat.json; then
+      assert_json_ok "wechat notify config" /tmp/e2e-wechat.json
+    else
+      fail "wechat notify config"
+    fi
+  fi
+else
+  skip "wechat notify config (openclaw not in PATH)"
+fi
+
 log "summary: pass=$PASS fail=$FAIL skip=$SKIP"
 if [ "$FAIL" -gt 0 ]; then
   exit 2
