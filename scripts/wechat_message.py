@@ -379,11 +379,14 @@ def send_messages(
         outcome["chars"] = len(message)
         sent.append(outcome)
         if not outcome.get("ok"):
-            return {
+            failed = {
                 "ok": False,
                 "chunks": sent,
                 "error": outcome.get("error", "chunk_send_failed"),
             }
+            if outcome.get("hint"):
+                failed["hint"] = outcome["hint"]
+            return failed
         if index < len(messages):
             time.sleep(pause_sec)
     return {"ok": True, "chunks": sent, "chunk_count": len(messages)}
