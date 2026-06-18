@@ -137,15 +137,29 @@ Typical runtime variables still required on the remote host:
 
 ## WeChat Notification (openclaw-weixin)
 
-Proactive WeChat delivery requires a persisted `contextToken` for the target peer.
-Without it, `openclaw message send` may return success while the phone receives nothing.
+Proactive WeChat delivery requires a **fresh** `contextToken` tied to an active WeChat session.
+Persisted tokens in `*.context-tokens.json` may look present while the upstream API returns `session timeout`.
 
 ```bash
+# Patch plugin once (also run by remote_deploy / setup_wechat_daily_remote)
+./scripts/patch_weixin_outbound.sh
+
+# Verify config
 python3 scripts/verify_wechat_notify.py
+
+# Live send (short message)
 python3 scripts/verify_wechat_notify.py --live --message "[ai-news] manual verification"
+
+# Send daily report in chunks (recommended for long content)
+./scripts/send_wechat_report.sh /path/to/report.md
 ```
 
-If `contextToken` is missing, send one inbound message to the bot in WeChat first to refresh the token file under `~/.openclaw/openclaw-weixin/accounts/*.context-tokens.json`.
+If delivery fails with `session timeout` or `contextToken missing` in `/tmp/openclaw/openclaw-*.log`:
+1. Send **any message** to the bot in WeChat (refreshes session token in gateway memory)
+2. Retry within a few minutes
+3. For daily cron, use `scripts/ai-news-daily-weixin.sh` wrapper (`setup_wechat_daily_remote.sh`) instead of cron `announce` delivery
+
+Chunk size default: `WEIXIN_CHUNK_MAX_CHARS=1500` (splits by numbered news items when possible).
 
 1. Try `ssh spark` before `ssh remote-spark`.
 2. Treat `/home/wayne/.share/skills` as the canonical shared skill source directory.

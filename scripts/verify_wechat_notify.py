@@ -11,6 +11,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from wechat_message import send_messages, split_message
+
 
 def load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -48,7 +54,6 @@ def resolve_target(home: Path, account: str) -> str | None:
     token_path = home / ".openclaw/openclaw-weixin/accounts" / f"{account}.context-tokens.json"
     tokens = load_json(token_path)
     if tokens:
-        # Prefer a peer that already has a persisted context token.
         for user_id, token in tokens.items():
             if isinstance(token, str) and token.strip():
                 return user_id
@@ -102,6 +107,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--live", action="store_true", help="Send a live verification message")
     parser.add_argument("--message", default="[ai-news] 微信通知链路验证")
+    parser.add_argument("--file", help="Send file contents (chunked) instead of --message")
+    parser.add_argument("--max-chars", type=int, default=int(os.getenv("WEIXIN_CHUNK_MAX_CHARS", "1500")))
     args = parser.parse_args()
 
     home = Path.home()
@@ -151,53 +158,33 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False))
         return 0
 
-    delivery = json.dumps({"contextToken": context_token})
-    proc = subprocess.run(
-        [
-            openclaw,
-            "message",
-            "send",
-            "--channel",
-            "openclaw-weixin",
-            "--account",
-            account,
-            "-t",
-            target,
-            "-m",
-            args.message,
-            "--json",
-            "--delivery",
-            delivery,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+    if args.file:
+        message_text = Path(args.file).read_text(encoding="utf-8")
+    else:
+        message_text = args.message
+
+    chunks = split_message(message_text, max_chars=args.max_chars)
+    send_result = send_messages(
+        openclaw=openclaw,
+        account=account,
+        target=target,
+        messages=chunks,
+        context_token=context_token,
     )
-
-    if proc.returncode != 0:
-        result["error"] = "weixin_send_failed"
-        result["stderr"] = (proc.stderr or proc.stdout or "").strip()
+    result.update(send_result)
+    if not send_result.get("ok"):
+        result["hint"] = (
+            "WeChat proactive delivery needs a fresh session. "
+            "Send any message to the bot in WeChat, then retry within a few minutes."
+        )
         print(json.dumps(result, ensure_ascii=False))
         return 2
 
-    try:
-        payload = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        result["error"] = "invalid_send_response"
-        result["stdout"] = proc.stdout
-        print(json.dumps(result, ensure_ascii=False))
-        return 2
-
-    message_id = payload.get("messageId") or (payload.get("payload") or {}).get("result", {}).get("messageId")
-    if not message_id:
-        result["error"] = "missing_message_id"
-        result["response"] = payload
-        print(json.dumps(result, ensure_ascii=False))
-        return 2
-
+    last_chunk = send_result["chunks"][-1]
     result["ok"] = True
     result["mode"] = "live"
-    result["message_id"] = message_id
+    result["chunk_count"] = len(chunks)
+    result["message_id"] = last_chunk.get("message_id")
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

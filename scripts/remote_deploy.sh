@@ -76,6 +76,10 @@ log "updating OpenClaw and reinstalling ai-news skill"
 E2E_RC=0
 ssh -o BatchMode=yes "$HOST" "$REMOTE_CMD" || E2E_RC=$?
 
+log "patching weixin outbound + configuring daily chunked delivery"
+ssh -o BatchMode=yes "$HOST" "bash -lc 'cd \"$REMOTE_SKILL_DIR\" && chmod +x scripts/patch_weixin_outbound.sh scripts/setup_wechat_daily_remote.sh scripts/send_wechat_report.sh scripts/ai-news-daily-weixin.sh && ./scripts/setup_wechat_daily_remote.sh'" \
+  || log "WeChat daily setup skipped or failed"
+
 log "sending WeChat deployment notification (if configured)"
 NOTIFY_SUMMARY="ai-news-skill deployed on $(ssh -o BatchMode=yes "$HOST" hostname 2>/dev/null || echo "$HOST")"
 if [ "$E2E_RC" -eq 0 ]; then
