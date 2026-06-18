@@ -73,10 +73,20 @@ EOS
 REMOTE_CMD="${REMOTE_CMD//REMOTE_SKILL_DIR_PLACEHOLDER/$REMOTE_SKILL_DIR}"
 
 log "updating OpenClaw and reinstalling ai-news skill"
-ssh -o BatchMode=yes "$HOST" "$REMOTE_CMD"
+E2E_RC=0
+ssh -o BatchMode=yes "$HOST" "$REMOTE_CMD" || E2E_RC=$?
 
 log "sending WeChat deployment notification (if configured)"
-ssh -o BatchMode=yes "$HOST" "bash -lc 'export PATH=\"\$HOME/.openclaw/bin:\$HOME/.openclaw/tools/node-v22.22.0/bin:\$PATH\"; cd \"$REMOTE_SKILL_DIR\" && ./scripts/send_wechat_notification.sh --status success --summary \"ai-news-skill deployed and e2e passed on \$(hostname)\"'" \
+NOTIFY_SUMMARY="ai-news-skill deployed on $(ssh -o BatchMode=yes "$HOST" hostname 2>/dev/null || echo "$HOST")"
+if [ "$E2E_RC" -eq 0 ]; then
+  NOTIFY_SUMMARY="${NOTIFY_SUMMARY}; e2e 15/15 passed"
+else
+  NOTIFY_SUMMARY="${NOTIFY_SUMMARY}; e2e had failures (rc=$E2E_RC)"
+fi
+ssh -o BatchMode=yes "$HOST" "bash -lc 'export PATH=\"\$HOME/.openclaw/bin:\$HOME/.openclaw/tools/node-v22.22.0/bin:\$PATH\"; cd \"$REMOTE_SKILL_DIR\" && ./scripts/send_wechat_notification.sh --status success --summary \"$NOTIFY_SUMMARY\"'" \
   || log "WeChat notification skipped or failed (channel may be unconfigured)"
 
 log "remote deploy complete"
+if [ "$E2E_RC" -ne 0 ]; then
+  exit "$E2E_RC"
+fi

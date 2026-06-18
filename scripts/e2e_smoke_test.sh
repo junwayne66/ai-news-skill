@@ -62,7 +62,7 @@ cat > /tmp/e2e-run-context-input.json <<JSON
 {"run_context": $(python3 -c 'import json;print(json.dumps(json.load(open("/tmp/e2e-run-context.json"))["run_context"]))')}
 JSON
 
-if "$PYTHON" scripts/fetch_sources.py --config data/config.example.json --input /tmp/e2e-run-context-input.json --include-collector-candidates > /tmp/e2e-prefetched.json; then
+if "$PYTHON" scripts/fetch_sources.py --config data/config.example.json --input /tmp/e2e-run-context-input.json --include-collector-candidates --timeout-sec 10 > /tmp/e2e-prefetched.json; then
   assert_json_ok "fetch_sources" /tmp/e2e-prefetched.json
 else
   fail "fetch_sources"

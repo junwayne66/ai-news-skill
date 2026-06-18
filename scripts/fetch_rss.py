@@ -235,6 +235,8 @@ def main() -> int:
             ok = False
             feed_results.append({"feed": name, "url": url, "ok": False, "error": str(exc)})
 
+    # Partial feed failures are acceptable when at least one feed returned items.
+    ok = len(items) > 0
     print(
         json.dumps(
             {
@@ -244,6 +246,7 @@ def main() -> int:
                 "item_count": len(items),
                 "items": items,
                 "feeds": feed_results,
+                "partial": any(not feed.get("ok") for feed in feed_results) and ok,
             },
             ensure_ascii=False,
             sort_keys=True,

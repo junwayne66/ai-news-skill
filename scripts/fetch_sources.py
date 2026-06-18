@@ -143,7 +143,6 @@ def main() -> int:
     since = since_from_context(payload, args.hours)
     source_runs: list[dict[str, Any]] = []
     items: list[dict[str, Any]] = []
-    ok = True
 
     config_input = json.dumps({"config": config}, ensure_ascii=False)
     common_args = ["--since", since, "--timeout-sec", str(args.timeout_sec)]
@@ -151,20 +150,20 @@ def main() -> int:
     if rss_enabled(config):
         rss_result = run_fetch_script("fetch_rss.py", config_input, common_args)
         source_runs.append(rss_result)
-        if not rss_result.get("ok", False):
-            ok = False
         items.extend(rss_result.get("items", []))
 
     if hackernews_enabled(config):
         hn_result = run_fetch_script("fetch_hackernews.py", config_input, common_args)
         source_runs.append(hn_result)
-        if not hn_result.get("ok", False):
-            ok = False
         items.extend(hn_result.get("items", []))
 
     if not source_runs:
         print(json.dumps({"ok": False, "error": "no_enabled_deterministic_sources"}, ensure_ascii=False))
         return 2
+
+    # Continue when any source produced items; record partial failures separately.
+    ok = len(items) > 0
+    failed_sources = [run.get("script") for run in source_runs if not run.get("ok", False)]
 
     output: dict[str, Any] = {
         "ok": ok,
@@ -174,6 +173,9 @@ def main() -> int:
         "sources": source_runs,
         "enabled_sources": [run.get("script") for run in source_runs],
     }
+    if failed_sources and ok:
+        output["partial"] = True
+        output["failed_sources"] = failed_sources
     if args.include_collector_candidates:
         output["collector_candidates"] = to_collector_candidates(items)
 
