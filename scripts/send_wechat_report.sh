@@ -25,7 +25,7 @@ from verify_wechat_notify import (
     channel_configured,
     openclaw_bin,
 )
-from wechat_message import load_weixin_account, split_message, send_messages
+from wechat_message import load_weixin_account, prepare_outbound_messages, send_messages
 
 report_path = Path(sys.argv[2])
 text = report_path.read_text(encoding="utf-8").strip()
@@ -59,7 +59,7 @@ if not token:
     )
     raise SystemExit(2)
 
-chunks = split_message(text)
+chunks = prepare_outbound_messages(text)
 result = send_messages(
     openclaw=openclaw,
     account=account,

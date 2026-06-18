@@ -159,7 +159,9 @@ If delivery fails with `session timeout` or `contextToken missing` in `/tmp/open
 2. Retry within a few minutes
 3. For daily cron, use `scripts/ai-news-daily-weixin.sh` wrapper (`setup_wechat_daily_remote.sh`) instead of cron `announce` delivery
 
-Chunk size default: `WEIXIN_CHUNK_MAX_CHARS=1500` (splits by numbered news items when possible).
+Chunk size default: `WEIXIN_CHUNK_MAX_CHARS=1500` (only used when report exceeds `WEIXIN_SINGLE_MESSAGE_MAX_CHARS`, default 3800).
+
+**Important:** WeChat proactive push can usually deliver only **one message per fresh session**. Daily reports under 3800 characters are sent as a single bubble. Longer reports are truncated with a note instead of unreliable multi-bubble proactive sends.
 
 1. Try `ssh spark` before `ssh remote-spark`.
 2. Treat `/home/wayne/.share/skills` as the canonical shared skill source directory.

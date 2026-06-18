@@ -16,6 +16,9 @@ from urllib.request import Request, urlopen
 
 
 DEFAULT_MAX_CHARS = int(os.getenv("WEIXIN_CHUNK_MAX_CHARS", "1500"))
+# Proactive WeChat pushes only reliably deliver one message per fresh session token.
+# Keep full reports in a single bubble when they fit the channel limit.
+SINGLE_MESSAGE_MAX_CHARS = int(os.getenv("WEIXIN_SINGLE_MESSAGE_MAX_CHARS", "3800"))
 MESSAGE_ITEM_RE = re.compile(r"^\d+\.\s", re.MULTILINE)
 
 
@@ -47,6 +50,20 @@ def gateway_log_path() -> Path | None:
         if path.exists():
             return path
     return None
+
+
+def prepare_outbound_messages(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> list[str]:
+    """Prefer one proactive bubble; truncate instead of multi-chunk proactive sends."""
+    text = text.strip()
+    if not text:
+        return []
+    if len(text) <= SINGLE_MESSAGE_MAX_CHARS:
+        return [text]
+    suffix = "\n\n…（日报过长，已截断；完整版见服务器 reports/）"
+    budget = SINGLE_MESSAGE_MAX_CHARS - len(suffix)
+    if budget > 200:
+        return [text[:budget].rstrip() + suffix]
+    return split_message(text, max_chars=max_chars)
 
 
 def split_message(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> list[str]:
@@ -198,34 +215,43 @@ def send_weixin_api_message(
     return {"ok": True, "message_id": client_id, "api_response": payload, "transport": "weixin_api"}
 
 
-def read_gateway_delivery_issues(since_ts: float) -> list[str]:
+def read_gateway_log_events(since_ts: float, needles: tuple[str, ...]) -> list[str]:
     path = gateway_log_path()
     if not path:
         return []
-    issues: list[str] = []
+    events: list[str] = []
     try:
-        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()[-400:]
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()[-600:]
     except OSError:
         return []
     for line in lines:
-        if "contextToken missing" in line or "session timeout" in line:
+        if not any(needle in line for needle in needles):
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            events.append(line[-240:])
+            continue
+        ts_text = ((payload.get("_meta") or {}).get("date") or payload.get("time") or "")
+        if ts_text:
             try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                issues.append(line[-240:])
-                continue
-            ts_text = ((payload.get("_meta") or {}).get("date") or payload.get("time") or "")
-            if ts_text:
-                try:
-                    ts = datetime.fromisoformat(str(ts_text).replace("Z", "+00:00")).timestamp()
-                except ValueError:
-                    ts = time.time()
-            else:
+                ts = datetime.fromisoformat(str(ts_text).replace("Z", "+00:00")).timestamp()
+            except ValueError:
                 ts = time.time()
-            if ts >= since_ts - 2:
-                msg = payload.get("1") or payload.get("message") or line
-                issues.append(str(msg))
-    return issues
+        else:
+            ts = time.time()
+        if ts >= since_ts - 2:
+            msg = payload.get("1") or payload.get("message") or line
+            events.append(str(msg))
+    return events
+
+
+def read_gateway_delivery_issues(since_ts: float) -> list[str]:
+    return read_gateway_log_events(since_ts, ("contextToken missing", "session timeout"))
+
+
+def read_gateway_send_success(since_ts: float) -> bool:
+    return any("text sent OK" in event for event in read_gateway_log_events(since_ts, ("text sent OK",)))
 
 
 def send_openclaw_message(
@@ -247,9 +273,11 @@ def send_openclaw_message(
         if api_result.get("ok"):
             return api_result
         if api_result.get("error") == "weixin_session_timeout":
-            # Stale token on disk; fall through to gateway send for log evidence.
-            pass
-        elif api_result.get("error") in {"weixin_api_error", "missing_weixin_api_token"}:
+            return {
+                **api_result,
+                "hint": "WeChat session expired; send any message to the bot, then retry within a few minutes.",
+            }
+        if api_result.get("error") in {"weixin_api_error", "missing_weixin_api_token"}:
             return api_result
 
     cmd = [
@@ -300,6 +328,14 @@ def send_openclaw_message(
         elif any("contextToken missing" in issue for issue in issues):
             result["error"] = "weixin_context_token_missing"
             result["ok"] = False
+    elif result.get("ok") and not read_gateway_send_success(started):
+        # openclaw CLI may return messageId even when the phone never receives it.
+        result["error"] = "weixin_delivery_unconfirmed"
+        result["ok"] = False
+        result["hint"] = (
+            "Gateway did not log text sent OK. Refresh the WeChat session by messaging the bot, "
+            "then retry. For long reports prefer a single message under 3800 chars."
+        )
     return result
 
 
@@ -311,11 +347,23 @@ def send_messages(
     messages: list[str],
     context_token: str | None = None,
     account_config: dict[str, Any] | None = None,
-    pause_sec: float = 0.8,
+    pause_sec: float = 2.5,
     prefix_chunks: bool = True,
 ) -> dict[str, Any]:
-    if prefix_chunks:
+    if prefix_chunks and len(messages) > 1:
         messages = prefix_chunk_messages(messages)
+    if len(messages) > 1:
+        # WeChat proactive delivery usually only delivers the first bubble per session.
+        return {
+            "ok": False,
+            "error": "weixin_multi_chunk_unsupported",
+            "chunk_count": len(messages),
+            "hint": (
+                "Proactive WeChat delivery cannot reliably send multiple messages in one run. "
+                f"Report length={sum(len(m) for m in messages)}; keep under {SINGLE_MESSAGE_MAX_CHARS} chars "
+                "or ask the user to message the bot and deliver via reply."
+            ),
+        }
     sent: list[dict[str, Any]] = []
     for index, message in enumerate(messages, start=1):
         outcome = send_openclaw_message(

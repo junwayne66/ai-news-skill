@@ -15,7 +15,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from wechat_message import load_weixin_account, send_messages, split_message
+from wechat_message import load_weixin_account, prepare_outbound_messages, send_messages, split_message
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -164,7 +164,7 @@ def main() -> int:
     else:
         message_text = args.message
 
-    chunks = split_message(message_text, max_chars=args.max_chars)
+    chunks = split_message(message_text, max_chars=args.max_chars) if args.file else prepare_outbound_messages(message_text, max_chars=args.max_chars)
     send_result = send_messages(
         openclaw=openclaw,
         account=account,
