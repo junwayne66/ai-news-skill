@@ -74,9 +74,10 @@ REMOTE_CMD="${REMOTE_CMD//REMOTE_SKILL_DIR_PLACEHOLDER/$REMOTE_SKILL_DIR}"
 
 log "updating OpenClaw and reinstalling ai-news skill"
 E2E_RC=0
+ssh -o BatchMode=yes "$HOST" "bash -lc 'cd \"$REMOTE_SKILL_DIR\" && chmod +x scripts/patch_weixin_outbound.sh && ./scripts/patch_weixin_outbound.sh'" || true
 ssh -o BatchMode=yes "$HOST" "$REMOTE_CMD" || E2E_RC=$?
 
-log "patching weixin outbound + configuring daily chunked delivery"
+log "patching weixin outbound (post-update) + configuring daily chunked delivery"
 ssh -o BatchMode=yes "$HOST" "bash -lc 'cd \"$REMOTE_SKILL_DIR\" && chmod +x scripts/patch_weixin_outbound.sh scripts/setup_wechat_daily_remote.sh scripts/send_wechat_report.sh scripts/ai-news-daily-weixin.sh && ./scripts/setup_wechat_daily_remote.sh'" \
   || log "WeChat daily setup skipped or failed"
 

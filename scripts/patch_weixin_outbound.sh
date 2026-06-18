@@ -42,3 +42,8 @@ text = text.replace(
 path.write_text(text, encoding="utf-8")
 print(f"[patch-weixin] patched {path}")
 PY
+
+if command -v openclaw >/dev/null 2>&1; then
+  openclaw gateway restart >/dev/null 2>&1 || systemctl --user restart openclaw-gateway.service >/dev/null 2>&1 || true
+  echo "[patch-weixin] gateway restarted to load plugin patch"
+fi
