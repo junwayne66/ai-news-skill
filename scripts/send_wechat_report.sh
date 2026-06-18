@@ -11,8 +11,6 @@ if [ -z "$REPORT_FILE" ] || [ ! -f "$REPORT_FILE" ]; then
   exit 2
 fi
 
-"$ROOT/scripts/patch_weixin_outbound.sh" || true
-
 "$PYTHON" - "$ROOT" "$REPORT_FILE" <<'PY'
 import json
 import sys
@@ -20,8 +18,14 @@ from pathlib import Path
 
 ROOT = Path(sys.argv[1])
 sys.path.insert(0, str(ROOT / "scripts"))
-from verify_wechat_notify import resolve_account, resolve_context_token, resolve_target, channel_configured, openclaw_bin
-from wechat_message import split_message, send_messages
+from verify_wechat_notify import (
+    resolve_account,
+    resolve_context_token,
+    resolve_target,
+    channel_configured,
+    openclaw_bin,
+)
+from wechat_message import load_weixin_account, split_message, send_messages
 
 report_path = Path(sys.argv[2])
 text = report_path.read_text(encoding="utf-8").strip()
@@ -38,8 +42,21 @@ if not channel_configured(openclaw):
 account = resolve_account(home)
 target = resolve_target(home, account or "")
 token = resolve_context_token(home, account or "", target or "") if account and target else None
+account_config = load_weixin_account(home, account) if account else {}
 if not account or not target:
     print(json.dumps({"ok": False, "error": "missing_weixin_target_or_account"}, ensure_ascii=False))
+    raise SystemExit(2)
+if not token:
+    print(
+        json.dumps(
+            {
+                "ok": False,
+                "error": "missing_context_token",
+                "hint": "请先在微信给 bot 发任意消息以刷新 session，然后 5 分钟内重试",
+            },
+            ensure_ascii=False,
+        )
+    )
     raise SystemExit(2)
 
 chunks = split_message(text)
@@ -49,6 +66,7 @@ result = send_messages(
     target=target,
     messages=chunks,
     context_token=token,
+    account_config=account_config,
 )
 result["mode"] = "report-chunks"
 result["report_file"] = str(report_path)

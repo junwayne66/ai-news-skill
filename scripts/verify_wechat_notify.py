@@ -15,7 +15,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from wechat_message import send_messages, split_message
+from wechat_message import load_weixin_account, send_messages, split_message
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -151,6 +151,7 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False))
         return 2
     result["checks"]["context_token_present"] = True
+    account_config = load_weixin_account(home, account)
 
     if not args.live:
         result["ok"] = True
@@ -170,6 +171,7 @@ def main() -> int:
         target=target,
         messages=chunks,
         context_token=context_token,
+        account_config=account_config,
     )
     result.update(send_result)
     if not send_result.get("ok"):

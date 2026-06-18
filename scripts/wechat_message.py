@@ -8,9 +8,11 @@ import os
 import re
 import subprocess
 import time
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.request import Request, urlopen
 
 
 DEFAULT_MAX_CHARS = int(os.getenv("WEIXIN_CHUNK_MAX_CHARS", "1500"))
@@ -126,6 +128,76 @@ def _split_daily_report(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
+def load_weixin_account(home: Path, account_id: str) -> dict[str, Any]:
+    path = home / ".openclaw/openclaw-weixin/accounts" / f"{account_id}.json"
+    return load_json(path)
+
+
+def prefix_chunk_messages(messages: list[str]) -> list[str]:
+    if len(messages) <= 1:
+        return messages
+    total = len(messages)
+    prefixed: list[str] = []
+    for index, message in enumerate(messages, start=1):
+        header = f"[{index}/{total}]"
+        if message.startswith(header):
+            prefixed.append(message)
+        else:
+            prefixed.append(f"{header}\n{message}")
+    return prefixed
+
+
+def send_weixin_api_message(
+    *,
+    account: dict[str, Any],
+    target: str,
+    message: str,
+    context_token: str | None,
+) -> dict[str, Any]:
+    base_url = str(account.get("baseUrl") or "https://ilinkai.weixin.qq.com").rstrip("/")
+    api_token = str(account.get("token") or "")
+    if not api_token:
+        return {"ok": False, "error": "missing_weixin_api_token"}
+
+    client_id = f"openclaw-weixin:{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+    body = {
+        "msg": {
+            "from_user_id": "",
+            "to_user_id": target,
+            "client_id": client_id,
+            "message_type": 1,
+            "message_state": 2,
+            "item_list": [{"type": 1, "text_item": {"text": message}}],
+            "context_token": context_token or None,
+        }
+    }
+    request = Request(
+        f"{base_url}/ilink/bot/sendmessage",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_token}",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        return {"ok": False, "error": "weixin_api_request_failed", "detail": str(exc)}
+
+    errcode = payload.get("errcode", 0)
+    if errcode not in (0, None):
+        error = "weixin_session_timeout" if errcode == -14 else "weixin_api_error"
+        return {
+            "ok": False,
+            "error": error,
+            "api_response": payload,
+            "message_id": client_id,
+        }
+    return {"ok": True, "message_id": client_id, "api_response": payload, "transport": "weixin_api"}
+
+
 def read_gateway_delivery_issues(since_ts: float) -> list[str]:
     path = gateway_log_path()
     if not path:
@@ -163,7 +235,23 @@ def send_openclaw_message(
     target: str,
     message: str,
     context_token: str | None = None,
+    account_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if account_config and context_token:
+        api_result = send_weixin_api_message(
+            account=account_config,
+            target=target,
+            message=message,
+            context_token=context_token,
+        )
+        if api_result.get("ok"):
+            return api_result
+        if api_result.get("error") == "weixin_session_timeout":
+            # Stale token on disk; fall through to gateway send for log evidence.
+            pass
+        elif api_result.get("error") in {"weixin_api_error", "missing_weixin_api_token"}:
+            return api_result
+
     cmd = [
         openclaw,
         "message",
@@ -222,8 +310,12 @@ def send_messages(
     target: str,
     messages: list[str],
     context_token: str | None = None,
+    account_config: dict[str, Any] | None = None,
     pause_sec: float = 0.8,
+    prefix_chunks: bool = True,
 ) -> dict[str, Any]:
+    if prefix_chunks:
+        messages = prefix_chunk_messages(messages)
     sent: list[dict[str, Any]] = []
     for index, message in enumerate(messages, start=1):
         outcome = send_openclaw_message(
@@ -232,6 +324,7 @@ def send_messages(
             target=target,
             message=message,
             context_token=context_token,
+            account_config=account_config,
         )
         outcome["chunk_index"] = index
         outcome["chunk_count"] = len(messages)
