@@ -1,94 +1,171 @@
 ---
 name: ai-news
-description: Use when orchestrating an OpenClaw scheduled daily AI industry news workflow that discovers, verifies, summarizes, reviews, requests Feishu approval, archives approved records to Feishu Base, builds Feishu cards from archived Base data, and publishes cards to Feishu group chats through deterministic scripts and atomic subagents.
+description: Use when orchestrating a Horizon-style daily AI industry news loop across OpenClaw, Hermes, Claude, Cursor, or Codex. The loop fetches and deduplicates sources, scores and enriches items, drafts and reviews a Chinese report, requests Feishu approval, archives approved records to Feishu Base, builds cards from archived data, and publishes only after deterministic verification and durable loop_state persistence.
 ---
 
 # AI News Daily Skill
 
-Use this skill to run or implement a daily AI industry news workflow on OpenClaw. The workflow is led by a main task agent that coordinates deterministic scripts and atomic specialist subagents, audits their outputs, requests approval from a designated Feishu news administrator, archives approved items to Feishu Base, builds a Feishu card from archived Base data, and publishes the card only after archive success.
+Run a **loop-engineered**, **Horizon-inspired** daily AI industry news workflow. A main orchestrator agent coordinates deterministic scripts and atomic specialist subagents, persists durable state outside the context window, verifies every stage, and only publishes after human approval and Feishu Base archive success.
+
+Inspired by [Horizon](https://github.com/Thysrael/Horizon) data flow and [loop engineering](references/loop-engineering.md) stop rules.
 
 ## Core Rule
 
-Never send AI news to the target Feishu group before the news administrator approves the exact payload and the approved items have been archived to Feishu Base. If the administrator rejects it, treat the feedback as a new instruction, rerun the relevant subagents, and repeat review and approval.
+Never send AI news to the target Feishu group before:
+
+1. the news administrator approves the exact `payload_hash`,
+2. approved items are archived to Feishu Base,
+3. the Feishu card is built from archived Base read-back fields.
+
+If the administrator rejects the draft, treat feedback as a new instruction, rerun the smallest necessary stages, and repeat review and approval.
+
+## Loop Engineering Principle
+
+Design the system that prompts the agent, not a one-shot prompt.
+
+| Component | Implementation |
+| --- | --- |
+| Schedule | OpenClaw cron, Claude `/loop`, Codex automation, Cursor cloud task |
+| Durable state | `data/runs/<job_id>/loop_state.json` via `scripts/loop_state.py` |
+| Isolation | OpenClaw `--session isolated`; fresh subagent envelopes per stage |
+| Skills | This file plus on-demand `scripts/query_memory.py` |
+| Connectors | `lark-cli`, Feishu Base, web/search tools, optional MCP |
+| Maker-checker | editor vs `quality_reviewer`; main agent vs administrator |
+
+Every stage transition must:
+
+```text
+read loop_state → act → verify → write loop_state
+```
+
+Stop when `scripts/loop_state.py check-done --job-id <id>` exits 0, or when `max_iterations` / no-progress rules fire. See [references/loop-engineering.md](references/loop-engineering.md).
+
+## Horizon Pipeline
+
+Map Horizon stages onto this skill. See [references/horizon-pipeline.md](references/horizon-pipeline.md).
+
+```text
+config → fetch → url_dedupe → score → filter → topic_dedupe → balance → enrich → draft → review → approve → archive → publish
+```
+
+| Stage | Owner |
+| --- | --- |
+| `fetching` | `scripts/fetch_sources.py` → `scripts/url_dedupe.py` → `source_collector` (gap fill only) |
+| `url_deduping` | `scripts/url_dedupe.py` (primary) or `dedupe_ranker` (fallback) |
+| `scoring`, `topic_deduping`, `balancing` | `dedupe_ranker` |
+| `enriching` | `industry_analyst` |
+| `drafting` | `report_editor` |
+| `internal_review` | `quality_reviewer` + main agent |
+| `approval_pending` → `archiving` → `publishing` | scripts + main agent |
 
 ## Execution Principle
 
-Use scripts for deterministic work and agents for uncertain judgment. Do not rely only on LLM reasoning for operations that can be computed, validated, hashed, parsed, rendered, or submitted through an API.
+Scripts for deterministic work. Agents for uncertain judgment.
 
-- Main agent: assemble inputs, call scripts, inspect script outputs, decide the next state, and assign subagents.
-- Scripts: normalize OpenClaw input, validate schemas, compute hashes and idempotency keys, enforce mechanically checkable quality gates, format Feishu payloads, call Feishu APIs, and write Feishu Base records.
-- Subagents: handle atomic uncertain tasks such as finding candidate news, judging source credibility, ranking industry impact, explaining significance, editing the Chinese report, and reviewing unsupported claims.
-- Keep subagent context small. Pass only the task envelope, relevant items, evidence URLs, and required output schema.
-- Agent and subagent memory must be loaded on demand with `scripts/query_memory.py`; do not preload all references into every role.
-- If a deterministic script and an agent disagree, the main agent must stop and resolve the conflict before approval or publishing.
+- **Orchestrator** (OpenClaw / Claude / Cursor): assemble inputs, call scripts, inspect outputs, advance `loop_state`, dispatch subagents, request approval, authorize publish.
+- **Executor** (optional Hermes): run bounded fetch/rank/enrich slices via ACP or JSON handoff; never publish directly.
+- **Scripts**: normalize context, validate schemas, hash payloads, manage loop state, call Feishu APIs, archive and read-back Base records.
+- **Subagents**: discover news, verify sources, rank clusters, explain significance, edit Chinese copy, review claims, prepare archive fields, advise replans.
+
+If a script and a subagent disagree, stop and resolve before approval or publishing.
+
+## Platform Support
+
+Set `AI_NEWS_PLATFORM` to one of: `openclaw`, `hermes`, `claude`, `cursor`, `codex`.
+
+| Platform | Typical role |
+| --- | --- |
+| `openclaw` | production orchestrator + cron |
+| `hermes` | execution sub-loops with reflective skill accumulation |
+| `claude` | developer `/loop` or `/goal` runs |
+| `cursor` | cloud agent + repo workflow |
+| `codex` | automations and background worktrees |
+
+Recommended production topology: **OpenClaw orchestrates, Hermes executes repetitive slices, Claude/Cursor for local iteration**. See [references/platform-adapters.md](references/platform-adapters.md).
 
 ## Runtime Inputs
 
-Require these inputs from platform config, secret manager, or task payload:
+### Required for orchestrated delivery
 
-- `AI_NEWS_PLATFORM`: must be `openclaw`; default to `openclaw` when omitted by the OpenClaw runtime.
-- `AI_NEWS_TIMEZONE`: default `Asia/Shanghai`.
-- `AI_NEWS_WINDOW`: default previous 24 hours.
-- `AI_NEWS_MAX_ITEMS`: default 8.
-- `AI_NEWS_LANGUAGE`: default `zh-CN`.
-- `FEISHU_NEWS_ADMIN_ID`: Feishu user ID or open ID for approval.
-- `FEISHU_GROUP_CHAT_ID`: target group chat for publishing.
-- `FEISHU_BASE_APP_TOKEN`: target Feishu Base app token.
-- `FEISHU_BASE_TABLE_ID`: target Feishu Base table ID.
-- Feishu app credentials configured for `lark-cli` message, card callback, and Base write permissions.
-- Source access configuration, such as search APIs, RSS lists, official newsroom URLs, or approved OpenClaw web tools.
+- `AI_NEWS_PLATFORM`: default `openclaw`
+- `AI_NEWS_EXECUTOR`: optional override; defaults to platform
+- `AI_NEWS_TIMEZONE`: default `Asia/Shanghai`
+- `AI_NEWS_WINDOW`: default `24h`
+- `AI_NEWS_MAX_ITEMS`: default `8`
+- `AI_NEWS_LANGUAGE`: default `zh-CN`
+- `AI_NEWS_CONFIG`: default `data/config.json`
+- `FEISHU_NEWS_ADMIN_ID`, `FEISHU_GROUP_CHAT_ID`, `FEISHU_BASE_APP_TOKEN`, `FEISHU_BASE_TABLE_ID`
+- Feishu app credentials for `lark-cli`
+- AI provider key per `data/config.json` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
 
-If any required secret or destination ID is missing, stop before collection and report the missing fields.
+Hermes executor-only slices may omit Feishu destination IDs until the orchestrator reaches delivery stages.
+
+If required secrets or destination IDs are missing for the active platform, stop before collection and report missing fields.
 
 ## Main Agent Workflow
 
-1. Normalize the OpenClaw scheduled run context into a single `RunContext` with `scripts/normalize_run_context.py`.
-2. Load [references/openclaw-runtime.md](references/openclaw-runtime.md) only when wiring OpenClaw cron, secrets, retries, or run state.
-3. Query role-specific memory with `scripts/query_memory.py` before assigning each subagent.
-4. Start the subagent collaboration loop from [references/subagent-contracts.md](references/subagent-contracts.md). Use atomic subagents whenever possible. If real subagent tools are unavailable, emulate the roles as separate labeled passes and preserve the same contracts.
-5. Collect candidate AI industry news from approved source channels.
-6. Verify source credibility, publication time, factual claims, and duplicate clusters.
-7. Rank items by impact, novelty, evidence quality, and relevance to the target audience.
-8. Draft the Feishu-ready Chinese daily report with source links and confidence markers.
-9. Run deterministic validation with `scripts/validate_news_payload.py`.
-10. Run the reviewer subagent. The main agent must also audit the result against the quality gates in [references/architecture.md](references/architecture.md).
-11. Freeze the approval payload and compute its hash with `scripts/hash_payload.py`.
-12. Send the approval request to the Feishu news administrator with `scripts/send_feishu_message.py` or a future approval-card script described in [references/feishu-workflow.md](references/feishu-workflow.md).
-13. If approved, ask the archive subagent to prepare archive records, then write them to Feishu Base with `scripts/archive_feishu_base.py`.
-14. Read the archived records back from Feishu Base with `scripts/fetch_feishu_base_records.py`.
-15. Build the final Feishu card from fetched Base record fields with `scripts/build_feishu_card.py`.
-16. Publish the card to the configured Feishu group with `scripts/send_feishu_card.py`.
-17. If rejected, capture the administrator's feedback, reopen the task board, rerun the smallest necessary subagent steps, and repeat steps 9-16. Default maximum retry count is 3 unless OpenClaw policy says otherwise.
+1. `scripts/normalize_run_context.py` → `RunContext`
+2. `scripts/loop_state.py init --job-id <id> --platform <platform>`
+3. Load config from `data/config.json` (copy from `data/config.example.json` if needed)
+4. `scripts/query_memory.py` before each subagent dispatch
+5. **Script-first fetch pipeline** (before `source_collector`):
+   - `scripts/fetch_sources.py --config data/config.json --input <run_context.json> --include-collector-candidates`
+   - `scripts/url_dedupe.py --input <fetch_output.json>`
+   - write `loop_state` with `stage=fetching` and `candidate_count`
+   - dispatch `source_collector` only for `official` / `search` gap fill using `prefetched_items`
+6. Advance remaining Horizon pipeline stages in [references/subagent-contracts.md](references/subagent-contracts.md)
+7. After each verified stage, `scripts/loop_state.py write --job-id <id>` with updated counts and `stage`
+8. `scripts/validate_news_payload.py` before review
+9. `quality_reviewer` maker-checker pass; main agent audits [references/architecture.md](references/architecture.md) quality gates
+10. `scripts/hash_payload.py` → freeze approval payload
+11. `scripts/send_feishu_approval.py` (card) or `scripts/send_feishu_message.py` (MVP text) → administrator approval
+12. On approval: `archive_record_builder` → `scripts/archive_feishu_base.py` → `scripts/fetch_feishu_base_records.py` → `scripts/build_feishu_card.py` → `scripts/send_feishu_card.py`
+13. Callback path: `scripts/validate_feishu_callback.py` validates signature/operator/expiry/hash before advancing state
+14. On rejection: `replan_advisor` → rerun smallest slice → increment `iteration_count`
+15. Mark `loop_state.stage = completed` only after publish `message_id` exists
 
 ## Context And Memory
 
-Keep the active context short:
+Keep active context short:
 
-- Load `SKILL.md` for the top-level workflow.
-- Use `scripts/query_memory.py --query "<topic>"` to retrieve only the reference snippets needed by the current role.
-- Pass each subagent only its task envelope, item slice, evidence URLs, output schema, and directly relevant feedback.
-- Store durable run history outside prompt context, preferably OpenClaw run state and Feishu Base records.
+- Load `SKILL.md` for top-level workflow only.
+- `scripts/query_memory.py --query "<topic>" --top-k 3`
+- Pass each subagent only its envelope, item slice, evidence URLs, output schema, and direct feedback.
+- Persist counts, hashes, IDs, and stage in `loop_state.json`, not in prompt history.
 
 ## Output Expectations
 
-The final published report should include:
+- Date window and timezone
+- 5-8 high-signal AI industry news items after Horizon-style scoring and balancing
+- One-line headline, concise Chinese summary, business/technical significance
+- Source links, publication dates, confidence markers
+- Optional `值得关注` / `待确认` sections when evidence supports them
+- Feishu card generated from archived Base fields only
 
-- Date window and timezone.
-- 5-8 high-signal AI industry news items.
-- One-line headline for each item.
-- Concise Chinese summary with business or technical significance.
-- Source links, publication dates, and confidence level.
-- Feishu card content generated from archived Feishu Base fields, not from an unarchived draft.
-- Optional sections for "值得关注" and "待确认", but only if evidence supports them.
+Avoid rumors, duplicate clusters, vague filler, and exaggerated claims.
 
-Avoid unsupported rumors, vague trend filler, duplicate items, and exaggerated claims.
+## WeChat Delivery (openclaw-weixin)
+
+Weixin ilink **does not support reliable unsolicited proactive push**. Persisted `contextToken` values and `openclaw message send` may return success without the phone receiving the message. The reliable path is **reply delivery inside an inbound user turn**.
+
+| Mode | When | How |
+| --- | --- | --- |
+| Cron / script | After daily loop | `scripts/send_wechat_report.sh` stages `reports/weixin-pending.md` and attempts proactive send |
+| On-demand (preferred) | User messages the bot | User replies **发日报** / **日报** / **早报**; agent reads `reports/weixin-pending.md` and replies with the **full original text verbatim** (no summary, no omission) |
+
+If proactive send fails, tell the user to reply **发日报** in WeChat. See [references/weixin-delivery.md](references/weixin-delivery.md).
 
 ## Reference Files
 
-- [references/architecture.md](references/architecture.md): end-to-end architecture, state machine, quality gates, retry behavior, and observability.
-- [references/subagent-contracts.md](references/subagent-contracts.md): subagent roles, message envelopes, review contracts, and handoff schemas.
-- [references/openclaw-runtime.md](references/openclaw-runtime.md): OpenClaw cron, run state, retries, installation, and runtime conventions.
-- [references/feishu-workflow.md](references/feishu-workflow.md): approval card, group publishing, callback handling, and Feishu Base archive schema.
-- [references/script-boundaries.md](references/script-boundaries.md): what must be implemented as deterministic scripts and what remains agent-driven.
-- [references/openclaw-lark-cli-quickstart.md](references/openclaw-lark-cli-quickstart.md): install and run this skill quickly on OpenClaw with the official `lark-cli`.
-- [references/memory-index.md](references/memory-index.md): query hints for loading only the reference snippets each agent needs.
+- [references/remote-host.md](references/remote-host.md): production SSH aliases, remote paths, deploy and smoke-test commands
+- [references/weixin-delivery.md](references/weixin-delivery.md): WeChat session limits, on-demand 发日报 flow, alternatives
+- [references/horizon-pipeline.md](references/horizon-pipeline.md): Horizon core data flow mapped to this skill
+- [references/loop-engineering.md](references/loop-engineering.md): durable state, stop rules, maker-checker, iteration guards
+- [references/platform-adapters.md](references/platform-adapters.md): OpenClaw, Hermes, Claude, Cursor, Codex bindings
+- [references/architecture.md](references/architecture.md): end-to-end architecture, state machine, quality gates
+- [references/subagent-contracts.md](references/subagent-contracts.md): roles, envelopes, Horizon stage mapping
+- [references/openclaw-runtime.md](references/openclaw-runtime.md): OpenClaw cron, retries, installation
+- [references/feishu-workflow.md](references/feishu-workflow.md): approval, publishing, Base schema
+- [references/script-boundaries.md](references/script-boundaries.md): script vs agent boundaries
+- [references/memory-index.md](references/memory-index.md): query hints per role
+- [data/config.example.json](data/config.example.json): Horizon-style sources, filtering, loop limits

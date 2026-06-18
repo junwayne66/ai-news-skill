@@ -7,6 +7,27 @@ Authoritative references:
 - OpenClaw skills CLI: https://docs.openclaw.ai/cli/skills
 - OpenClaw cron CLI: https://docs.openclaw.ai/cli/cron
 - Lark/Feishu CLI: https://github.com/larksuite/cli
+- Remote host environment: [references/remote-host.md](references/remote-host.md)
+
+## Remote Host Memory
+
+When the target is the production host, load remote environment memory first:
+
+```bash
+scripts/query_memory.py --query "remote host ssh spark openclaw share skills" --top-k 3
+```
+
+Default SSH preference:
+
+1. Intranet: `ssh spark`
+2. External: `ssh remote-spark`
+
+Default remote paths:
+
+- OpenClaw: `/home/wayne/.openclaw`
+- Claude Code: `/home/wayne/.claude`
+- Shared skills: `/home/wayne/.share/skills`
+- Shared memory: `/home/wayne/.share/memory`
 
 ## Operating Rules For The Agent
 
@@ -406,7 +427,8 @@ Use this operating model:
 
 ```text
 main_task_agent
-  -> source_collector subagent
+  -> fetch_sources.py + url_dedupe.py (deterministic prefetch)
+  -> source_collector subagent (official/search gap fill only)
   -> source_verifier subagent
   -> dedupe_ranker subagent
   -> industry_analyst subagent
@@ -435,6 +457,7 @@ Send this prompt to the target OpenClaw agent:
 
 ```text
 Use $ai-news to run a dry-run daily AI industry news workflow for the previous 24 hours.
+Use scripts/fetch_sources.py and scripts/url_dedupe.py before source_collector.
 Use the main task agent to decompose work and atomic subagents for uncertain tasks.
 Use deterministic scripts for context normalization, validation, hash, Feishu approval notification, Base archive, Base read-back, Feishu card build, and card send.
 Prepare the administrator approval draft, but do not send to the group unless approval and Base archive/read-back have succeeded.
