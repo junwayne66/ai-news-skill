@@ -178,15 +178,19 @@ def send_weixin_api_message(
 
     client_id = f"openclaw-weixin:{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
     body = {
+        "base_info": {
+            "channel_version": str(account.get("channelVersion") or "unknown"),
+            "bot_agent": str(account.get("botAgent") or "openclaw-weixin"),
+        },
         "msg": {
             "from_user_id": "",
             "to_user_id": target,
             "client_id": client_id,
-            "message_type": 1,
+            "message_type": 2,
             "message_state": 2,
             "item_list": [{"type": 1, "text_item": {"text": message}}],
             "context_token": context_token or None,
-        }
+        },
     }
     request = Request(
         f"{base_url}/ilink/bot/sendmessage",
@@ -263,22 +267,7 @@ def send_openclaw_message(
     context_token: str | None = None,
     account_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if account_config and context_token:
-        api_result = send_weixin_api_message(
-            account=account_config,
-            target=target,
-            message=message,
-            context_token=context_token,
-        )
-        if api_result.get("ok"):
-            return api_result
-        if api_result.get("error") == "weixin_session_timeout":
-            return {
-                **api_result,
-                "hint": "WeChat session expired; send any message to the bot, then retry within a few minutes.",
-            }
-        if api_result.get("error") in {"weixin_api_error", "missing_weixin_api_token"}:
-            return api_result
+    started = time.time()
 
     cmd = [
         openclaw,
@@ -296,13 +285,13 @@ def send_openclaw_message(
     ]
     if context_token:
         cmd.extend(["--delivery", json.dumps({"contextToken": context_token})])
-    started = time.time()
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     result: dict[str, Any] = {
         "ok": proc.returncode == 0,
         "returncode": proc.returncode,
         "stdout": (proc.stdout or "").strip(),
         "stderr": (proc.stderr or "").strip(),
+        "transport": "openclaw_gateway",
     }
     if proc.returncode == 0:
         try:
@@ -329,13 +318,24 @@ def send_openclaw_message(
             result["error"] = "weixin_context_token_missing"
             result["ok"] = False
     elif result.get("ok") and not read_gateway_send_success(started):
-        # openclaw CLI may return messageId even when the phone never receives it.
         result["error"] = "weixin_delivery_unconfirmed"
         result["ok"] = False
-        result["hint"] = (
-            "Gateway did not log text sent OK. Refresh the WeChat session by messaging the bot, "
-            "then retry. For long reports prefer a single message under 3800 chars."
+
+    if result.get("ok"):
+        return result
+
+    if account_config and context_token:
+        api_result = send_weixin_api_message(
+            account=account_config,
+            target=target,
+            message=message,
+            context_token=context_token,
         )
+        if api_result.get("ok"):
+            return api_result
+        result["api_fallback"] = api_result
+        if api_result.get("error") == "weixin_session_timeout" and not result.get("hint"):
+            result["hint"] = api_result.get("hint")
     return result
 
 

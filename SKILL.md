@@ -144,9 +144,21 @@ Keep active context short:
 
 Avoid rumors, duplicate clusters, vague filler, and exaggerated claims.
 
+## WeChat Delivery (openclaw-weixin)
+
+Weixin ilink **does not support reliable unsolicited proactive push**. Persisted `contextToken` values and `openclaw message send` may return success without the phone receiving the message. The reliable path is **reply delivery inside an inbound user turn**.
+
+| Mode | When | How |
+| --- | --- | --- |
+| Cron / script | After daily loop | `scripts/send_wechat_report.sh` stages `reports/weixin-pending.md` and attempts proactive send |
+| On-demand (preferred) | User messages the bot | User replies **发日报** / **日报** / **早报**; agent reads `reports/weixin-pending.md` and replies with the **full original text verbatim** (no summary, no omission) |
+
+If proactive send fails, tell the user to reply **发日报** in WeChat. See [references/weixin-delivery.md](references/weixin-delivery.md).
+
 ## Reference Files
 
 - [references/remote-host.md](references/remote-host.md): production SSH aliases, remote paths, deploy and smoke-test commands
+- [references/weixin-delivery.md](references/weixin-delivery.md): WeChat session limits, on-demand 发日报 flow, alternatives
 - [references/horizon-pipeline.md](references/horizon-pipeline.md): Horizon core data flow mapped to this skill
 - [references/loop-engineering.md](references/loop-engineering.md): durable state, stop rules, maker-checker, iteration guards
 - [references/platform-adapters.md](references/platform-adapters.md): OpenClaw, Hermes, Claude, Cursor, Codex bindings

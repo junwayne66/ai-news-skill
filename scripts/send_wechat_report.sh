@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Send a daily AI news report to WeChat in multiple chunks when needed.
+# Stage and attempt WeChat report delivery; fall back to on-demand reply trigger.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,6 +25,7 @@ from verify_wechat_notify import (
     channel_configured,
     openclaw_bin,
 )
+from wechat_delivery import recent_inbound_minutes, reply_delivery_hint, stage_pending_report
 from wechat_message import load_weixin_account, prepare_outbound_messages, send_messages
 
 report_path = Path(sys.argv[2])
@@ -33,10 +34,20 @@ if not text:
     print(json.dumps({"ok": False, "error": "empty_report"}, ensure_ascii=False))
     raise SystemExit(2)
 
+staged = stage_pending_report(report_path)
 home = Path.home()
 openclaw = openclaw_bin()
+recent = recent_inbound_minutes() is not None
+
+result: dict = {
+    "staged": staged,
+    "delivery_mode": "proactive_then_reply_fallback",
+    "recent_inbound": recent,
+}
+
 if not channel_configured(openclaw):
-    print(json.dumps({"ok": False, "error": "weixin_channel_not_configured"}, ensure_ascii=False))
+    result.update({"ok": False, "error": "weixin_channel_not_configured", "hint": reply_delivery_hint(recent_inbound=recent)})
+    print(json.dumps(result, ensure_ascii=False))
     raise SystemExit(2)
 
 account = resolve_account(home)
@@ -44,23 +55,12 @@ target = resolve_target(home, account or "")
 token = resolve_context_token(home, account or "", target or "") if account and target else None
 account_config = load_weixin_account(home, account) if account else {}
 if not account or not target:
-    print(json.dumps({"ok": False, "error": "missing_weixin_target_or_account"}, ensure_ascii=False))
-    raise SystemExit(2)
-if not token:
-    print(
-        json.dumps(
-            {
-                "ok": False,
-                "error": "missing_context_token",
-                "hint": "请先在微信给 bot 发任意消息以刷新 session，然后 5 分钟内重试",
-            },
-            ensure_ascii=False,
-        )
-    )
+    result.update({"ok": False, "error": "missing_weixin_target_or_account", "hint": reply_delivery_hint(recent_inbound=recent)})
+    print(json.dumps(result, ensure_ascii=False))
     raise SystemExit(2)
 
 chunks = prepare_outbound_messages(text)
-result = send_messages(
+send_result = send_messages(
     openclaw=openclaw,
     account=account,
     target=target,
@@ -68,9 +68,16 @@ result = send_messages(
     context_token=token,
     account_config=account_config,
 )
-result["mode"] = "report-chunks"
+result.update(send_result)
 result["report_file"] = str(report_path)
 result["report_chars"] = len(text)
+
+if not send_result.get("ok"):
+    result["hint"] = reply_delivery_hint(recent_inbound=recent)
+    result["trigger_words"] = ["发日报", "日报", "早报"]
+    print(json.dumps(result, ensure_ascii=False))
+    raise SystemExit(2)
+
+result["mode"] = "proactive"
 print(json.dumps(result, ensure_ascii=False))
-raise SystemExit(0 if result.get("ok") else 2)
 PY
