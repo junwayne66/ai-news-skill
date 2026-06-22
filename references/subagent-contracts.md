@@ -238,7 +238,7 @@ The reviewer should be strict. A shorter verified report is better than a fuller
 
 ## Archive Record Builder
 
-Prepare one record per approved news item and one optional run summary record. The actual Feishu Base write must be done by `scripts/archive_feishu_base.py`. The group card will be built from these archived fields after the script succeeds.
+Prepare one record per final news item. The `来源` field must be the primary article URL (`https://...`) so `scripts/build_feishu_card.py` can render `[原文链接](url)`.
 
 Return:
 
@@ -255,7 +255,7 @@ Return:
         "意义": "string",
         "来源": "https://...",
         "可信度": "high|medium|low",
-        "分类": "model|product|funding|policy|research|infra|enterprise|security|other",
+        "分类": "model|product|funding|policy|research|infra|enterprise|security|embodied_intelligence|robotics|world_model|other",
         "Run ID": "string"
       }
     }

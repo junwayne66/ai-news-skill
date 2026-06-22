@@ -1,15 +1,21 @@
-# AI News Skill for OpenClaw
+# AI News Skill for OpenClaw / Hermes
 
-这个 skill 用于在 OpenClaw 上每日抓取、审核、推送和归档 AI 行业新闻。
+这个 skill 用于在 OpenClaw 或 Hermes 上抓取、推送和归档 AI 行业新闻（含具身智能、机器人、世界模型）。
 
-如果希望让 OpenClaw 智能体自己按步骤安装和验证本 skill，请让它优先阅读 [OPENCLAW_AGENT_RUNBOOK.md](OPENCLAW_AGENT_RUNBOOK.md)。
+**零基础部署**：让 AI Agent 阅读 [AGENT_DEPLOYMENT_GUIDE.md](AGENT_DEPLOYMENT_GUIDE.md)，或发送：
+
+```text
+参考项目 https://github.com/junwayne66/ai-news-skill.git ，安装部署 ai-news-skill
+```
+
+OpenClaw 详细 runbook：[OPENCLAW_AGENT_RUNBOOK.md](OPENCLAW_AGENT_RUNBOOK.md)
 
 核心原则：
 
-- 确定性事件使用脚本执行，例如运行上下文归一化、字段校验、payload hash、飞书消息发送、飞书多维表写入。
-- 不确定性事件使用 agent/subagent 决策，例如新闻发现、可信度判断、重要性排序、摘要重写、驳回后的重新规划。
-- 主任务 agent 负责拼接输入、调用脚本、分派原子 subagent、路由 subagent 协作消息，并决定重做、流转下级、返回上级或发布。
-- agent/subagent 记忆通过 `scripts/query_memory.py` 按需查询，不把全部参考文档塞进上下文。
+- 确定性事件使用脚本执行；不确定性事件使用 agent/subagent 决策。
+- **无需管理员审批**：内部质检通过后直接发群。
+- 卡片每条新闻携带可点击原文链接。
+- 工作日 08:00 日报；周日 20:00 周报。
 
 官方参考：
 
@@ -21,6 +27,7 @@
 
 ```text
 ai-news/
+├── AGENT_DEPLOYMENT_GUIDE.md
 ├── SKILL.md
 ├── agents/
 │   └── openai.yaml
@@ -47,6 +54,8 @@ ai-news/
     ├── query_memory.py
     ├── send_feishu_card.py
     ├── send_feishu_message.py
+    ├── remote_openclaw_e2e.sh
+    ├── setup_schedule.sh
     ├── sync_agent_reach_health.py
     └── validate_news_payload.py
 ```
@@ -107,8 +116,7 @@ lark-cli auth status
 
 需要提前准备：
 
-- 新闻管理员 ID：`FEISHU_NEWS_ADMIN_ID`，建议使用 `open_id`。
-- 管理员 ID 类型：`FEISHU_NEWS_ADMIN_ID_TYPE`，例如 `open_id`、`user_id`。
+- 新闻管理员 ID：`FEISHU_NEWS_ADMIN_ID`（**可选**，已取消审批流程）
 - 目标群聊 ID：`FEISHU_GROUP_CHAT_ID`，通常形如 `oc_xxx`。
 - 飞书多维表 app token：`FEISHU_BASE_APP_TOKEN`。
 - 飞书多维表 table ID：`FEISHU_BASE_TABLE_ID`。
@@ -451,42 +459,32 @@ openclaw agent --help
 Use $ai-news to run a dry-run daily AI news workflow for the previous 24 hours. Validate scripts and prepare the Feishu approval draft, but do not publish to the group.
 ```
 
-## 创建每日定时任务
+## 创建定时任务
 
-推荐先创建 Agent Reach 巡检，再创建 AI News 源健康检查，最后创建日报任务：
-
-```bash
-openclaw cron create "0 8 * * *" \
-  'Run agent-reach watch. If the output contains problems or a new version, notify the admin with the full report and the official update doc URL.' \
-  --name "Agent Reach Watch" \
-  --agent ops \
-  --session isolated \
-  --no-deliver
-
-openclaw cron create "30 8 * * *" \
-  'Use $ai-news source health scripts only: run scripts/sync_agent_reach_health.py and scripts/check_news_sources.py --refresh-reach. Do not publish.' \
-  --name "AI News Source Check" \
-  --agent ops \
-  --session isolated \
-  --no-deliver
-```
-
-OpenClaw cron 的命令格式是 schedule 在前、prompt 在后。建议使用独立会话，避免继承旧上下文：
+一键创建工作日日报 + 周日周报：
 
 ```bash
-openclaw cron create "0 9 * * *" \
-  'Use $ai-news to run the daily AI industry news workflow for the previous 24 hours. First sync Agent Reach health with scripts/sync_agent_reach_health.py and scripts/check_news_sources.py --refresh-reach. Use deterministic scripts for OpenClaw context normalization, Feishu approval notification, Base archive, Base read-back, Feishu card building, and group publishing. Use atomic subagents for uncertain news collection, verification, ranking, editing, and review. Do not publish before approval and Base archive success.' \
-  --name "AI News Daily" \
-  --agent ops \
-  --session isolated \
-  --no-deliver
+bash scripts/setup_schedule.sh
 ```
 
-注意：
+| 任务 | Cron | 说明 |
+| --- | --- | --- |
+| 工作日日报 | `0 8 * * 1-5` | 前 24h，`AI_NEWS_MODE=daily` |
+| 周日周报 | `0 20 * * 0` | 前 7d 最热，`AI_NEWS_MODE=weekly` |
 
-- prompt 使用单引号，避免 shell 把 `$ai-news` 当环境变量展开。
-- `--session isolated` 为每次运行创建独立上下文。
-- `--no-deliver` 禁用 OpenClaw runner 的兜底投递；最终消息由本 skill 调用飞书脚本发送。
+手动等价命令：
+
+```bash
+openclaw cron create "0 8 * * 1-5" \
+  'Use $ai-news to run the daily AI industry news workflow for the previous 24 hours with AI_NEWS_MODE=daily. Cover embodied intelligence, robotics, and world models. After internal review, archive, build card with source links, publish directly to group. No admin approval.' \
+  --name "AI News Daily Weekdays" --agent main --session isolated --no-deliver
+
+openclaw cron create "0 20 * * 0" \
+  'Use $ai-news to run the weekly AI industry news workflow for the previous 7 days with AI_NEWS_MODE=weekly. Select hottest items. Archive, build weekly card with source links, publish directly to group. No admin approval.' \
+  --name "AI News Weekly Sunday" --agent main --session isolated --no-deliver
+```
+
+注意：prompt 使用单引号；`--session isolated`；`--no-deliver`。
 
 查看任务：
 
@@ -507,44 +505,20 @@ openclaw cron run <job-id> --wait --wait-timeout 30m
 openclaw cron runs --id <job-id> --limit 10
 ```
 
-## 审批流程
+## 发布流程（无审批）
 
-### MVP：私聊审批
+内部质检通过后直接发群：
 
-最快可用版本使用飞书私聊审批：
-
-1. 主 agent 生成日报草稿。
-2. `scripts/validate_news_payload.py` 做确定性校验。
+1. 主 agent 生成日报/周报草稿。
+2. `scripts/validate_news_payload.py` 校验（每条必须有 `primary_source_url`）。
 3. `scripts/hash_payload.py` 计算 `payload_hash`。
-4. `scripts/send_feishu_message.py` 将草稿和 `payload_hash` 发给新闻管理员。
-5. 管理员回复：
+4. `archive_record_builder` 准备多维表字段（`来源` 存 `https://` URL）。
+5. `scripts/archive_feishu_base.py` 写入多维表。
+6. `scripts/fetch_feishu_base_records.py` 读回。
+7. `scripts/build_feishu_card.py` 构建卡片（每条渲染 `[原文链接](url)`）。
+8. `scripts/send_feishu_card.py` 发送到群聊。
 
-```text
-同意发布 <payload_hash>
-```
-
-或：
-
-```text
-驳回 <反馈内容>
-```
-
-6. 主 agent 校验 hash。
-7. 同意后调用 `archive_record_builder` 准备多维表字段。
-8. 调用 `scripts/archive_feishu_base.py` 写入多维表。
-9. 调用 `scripts/fetch_feishu_base_records.py` 读回已归档记录。
-10. 调用 `scripts/build_feishu_card.py` 基于读回字段组装飞书卡片。
-11. 调用 `scripts/send_feishu_card.py` 将卡片发送到群聊。
-12. 驳回后主 agent 根据反馈调用 `replan_advisor`，只重跑必要 subagent。
-
-### 进阶：互动卡审批
-
-后续可以补两个确定性脚本：
-
-- `scripts/send_feishu_approval.py`
-- `scripts/validate_feishu_callback.py`
-
-互动卡 callback 的签名、操作者 ID、过期时间、payload hash 必须由脚本校验，不能由 LLM 自行判断。
+**已取消管理员审批**，不再等待私聊「同意发布」。
 
 ## 真实发送前检查清单
 
@@ -696,6 +670,6 @@ openclaw skills check
 - 不要把飞书 app secret、tenant token、用户 token 写进 prompt 或 README。
 - 使用 OpenClaw secret manager 或系统环境变量管理敏感信息。
 - 对真实群聊发送前必须先 dry-run。
-- 发布动作必须匹配管理员审批过的 `payload_hash`。
+- 发布前必须先 dry-run。
 - 多维表写入失败不能触发重复群发，只能重试归档。
-- 管理员驳回后只能重做必要步骤，避免整条链路无意义重复。
+- 内部质检失败后只重做必要 subagent 步骤。

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime
 from typing import Any
@@ -43,6 +44,24 @@ def record_fields(record: dict[str, Any]) -> dict[str, Any]:
     return fields if isinstance(fields, dict) else {}
 
 
+def extract_url(value: str) -> str | None:
+    value = value.strip()
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    match = re.search(r"https?://[^\s)>\"]+", value)
+    return match.group(0) if match else None
+
+
+def format_source_link(source: str) -> str:
+    source = source.strip()
+    if not source:
+        return ""
+    url = extract_url(source)
+    if url:
+        return f"[原文链接]({url})"
+    return f"来源：{source}"
+
+
 def build_item_md(index: int, record: dict[str, Any]) -> str:
     fields = record_fields(record)
     title = field(fields, "标题", f"新闻 {index}")
@@ -62,7 +81,7 @@ def build_item_md(index: int, record: dict[str, Any]) -> str:
     if meta:
         lines.append(meta)
     if source:
-        lines.append(f"来源：{source}")
+        lines.append(format_source_link(source))
     if record_id:
         lines.append(f"Base Record：{record_id}")
     return "\n".join(lines)
@@ -88,7 +107,9 @@ def main() -> int:
         or run_context.get("window_end", "")[:10]
         or datetime.now().date().isoformat()
     )
-    title = args.title or payload.get("title") or f"AI 行业日报｜{report_date}"
+    mode = (payload.get("mode") or run_context.get("mode") or run_context.get("report_type") or "daily").lower()
+    default_title = f"AI 行业周报｜{report_date}" if mode == "weekly" else f"AI 行业日报｜{report_date}"
+    title = args.title or payload.get("title") or default_title
     timezone_name = run_context.get("timezone") or payload.get("timezone") or "Asia/Shanghai"
     window_start = run_context.get("window_start") or payload.get("window_start")
     window_end = run_context.get("window_end") or payload.get("window_end")

@@ -10,9 +10,11 @@ Use `scripts/query_memory.py` to load only the snippets needed for the current t
 | Runtime context and retry | `openclaw run_context retry idempotency` |
 | Deterministic versus agent boundary | `script deterministic agent boundary` |
 | Subagent role contracts | `subagent role envelope peer_request` |
-| Feishu approval | `feishu approval payload_hash admin` |
-| Feishu group publishing | `feishu group publish message_id` |
-| Feishu Base archive | `feishu base archive records fields` |
+| Feishu direct publish | `feishu group publish source link card` |
+| Feishu Base archive | `feishu base archive records fields url` |
+| Weekly digest mode | `weekly mode hottest items 7d` |
+| Embodied robotics topics | `embodied intelligence robotics world model` |
+| Agent deployment | `agent deployment guide openclaw hermes` |
 | Quality gates | `quality gates source duplicate confidence` |
 | Agent Reach integration | `agent reach integration doctor json` |
 | News channel policy | `news channel policy routing fallback` |

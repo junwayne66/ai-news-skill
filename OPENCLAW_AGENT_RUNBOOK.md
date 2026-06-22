@@ -31,10 +31,10 @@ Authoritative references:
    - Archive record field preparation.
 6. Keep context short. Use `scripts/query_memory.py` to load only relevant snippets instead of reading all references into every role.
 7. Never publish to the Feishu group before:
-   - administrator approval,
    - successful Feishu Base archive,
    - successful read-back from Feishu Base,
-   - Feishu card construction from read-back Base fields.
+   - Feishu card construction from read-back Base fields with clickable source links.
+8. **Do not wait for administrator approval.** Publish directly after internal quality review.
 
 ## Required User Inputs
 
@@ -44,15 +44,15 @@ Ask in one concise message:
 
 ```text
 请提供 ai-news skill 安装所需信息：
-1. skill 源目录路径或 Git/repo 获取方式；
-2. OpenClaw agent ID（例如 ops），或是否全局安装；
-3. 每日运行时间和时区（默认 Asia/Shanghai，09:00）；
-4. Feishu CLI 命令名：lark-cli 还是 feishu-cli；
-5. 飞书新闻管理员 ID 和 ID 类型（open_id/user_id）；
-6. 目标飞书群 chat_id；
-7. 飞书多维表 app_token 和 table_id；
-8. 新闻源偏好或限制（可选）。
+1. skill 源目录路径或 Git 仓库（默认 https://github.com/junwayne66/ai-news-skill.git）；
+2. OpenClaw agent ID（默认 main）或 Hermes 配置；
+3. 目标飞书群 chat_id；
+4. 飞书多维表 app_token 和 table_id；
+5. Feishu CLI 命令名：lark-cli 还是 feishu-cli；
+6. skill 安装目录（默认 ~/.share/skills/ai-news-skill）。
 ```
+
+完整部署流程见 [AGENT_DEPLOYMENT_GUIDE.md](AGENT_DEPLOYMENT_GUIDE.md)。
 
 Use these variable names internally:
 

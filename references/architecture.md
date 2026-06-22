@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build an OpenClaw scheduled AI news workflow that coordinates deterministic scripts and multiple specialist subagents, requests human approval in Feishu, archives approved content to Feishu Base, builds a Feishu card from archived Base data, and publishes the card to a Feishu group.
+Build a scheduled AI news workflow on OpenClaw or Hermes that coordinates deterministic scripts and specialist subagents, archives content to Feishu Base, builds Feishu cards with clickable source links, and publishes directly to a Feishu group after internal quality review. **Administrator approval is disabled.**
 
 The architecture follows one rule: scripts execute deterministic events, agents decide uncertain events. The main agent stitches inputs together, calls scripts, reads structured results, and chooses the next action.
 
@@ -70,13 +70,13 @@ scheduled
   -> ranking
   -> drafting
   -> internal_review
-  -> approval_pending
-  -> approved
   -> archiving
   -> card_building
   -> publishing
   -> completed
 ```
+
+Rejected internal review loops back to the smallest necessary subagent step. There is no `approval_pending` state in the default configuration.
 
 `reach_sync` and `sources_ready` are deterministic script steps that must complete before `collecting`.
 

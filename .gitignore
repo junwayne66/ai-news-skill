@@ -1,1 +1,5 @@
 scripts/__pycache__/
+.env.e2e
+**/._*
+.DS_Store
+.omc/

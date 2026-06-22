@@ -1,98 +1,103 @@
 ---
 name: ai-news
-description: Use when orchestrating an OpenClaw scheduled daily AI industry news workflow that discovers, verifies, summarizes, reviews, requests Feishu approval, archives approved records to Feishu Base, builds Feishu cards from archived Base data, and publishes cards to Feishu group chats through deterministic scripts and atomic subagents.
+description: Use when orchestrating a scheduled AI industry news workflow (daily or weekly) on OpenClaw or Hermes that discovers, verifies, summarizes, archives to Feishu Base, builds Feishu cards with source links, and publishes directly to Feishu group chats through deterministic scripts and atomic subagents.
 ---
 
-# AI News Daily Skill
+# AI News Skill
 
-Use this skill to run or implement a daily AI industry news workflow on OpenClaw. The workflow is led by a main task agent that coordinates deterministic scripts and atomic specialist subagents, audits their outputs, requests approval from a designated Feishu news administrator, archives approved items to Feishu Base, builds a Feishu card from archived Base data, and publishes the card only after archive success.
+Use this skill to run or implement an AI industry news workflow on OpenClaw or Hermes. The workflow is led by a main task agent that coordinates deterministic scripts and atomic specialist subagents, archives items to Feishu Base, builds a Feishu card from archived Base data with clickable source links, and publishes the card directly to the target group after internal quality review.
 
 ## Core Rule
 
-Never send AI news to the target Feishu group before the news administrator approves the exact payload and the approved items have been archived to Feishu Base. If the administrator rejects it, treat the feedback as a new instruction, rerun the relevant subagents, and repeat review and approval.
+After internal quality review passes, archive items to Feishu Base, read them back, build the Feishu card from archived fields, and publish directly to the target group. **Do not require administrator approval.** Do not publish from an unarchived draft.
+
+## Coverage Requirements
+
+Every run must actively cover these topic areas (see [references/news-sources.md](references/news-sources.md)):
+
+- Model releases, funding, policy, research, infrastructure, community signals
+- **Embodied intelligence** (具身智能)
+- **Robotics** (机器人)
+- **World models** (世界模型)
+
+For `AI_NEWS_MODE=weekly`, rank by cross-week heat, impact, and evidence quality; prefer the hottest items rather than only the newest.
 
 ## Execution Principle
 
-Use scripts for deterministic work and agents for uncertain judgment. Do not rely only on LLM reasoning for operations that can be computed, validated, hashed, parsed, rendered, or submitted through an API.
+Use scripts for deterministic work and agents for uncertain judgment.
 
 - Main agent: assemble inputs, call scripts, inspect script outputs, decide the next state, and assign subagents.
-- Scripts: normalize OpenClaw input, validate schemas, compute hashes and idempotency keys, enforce mechanically checkable quality gates, format Feishu payloads, call Feishu APIs, and write Feishu Base records.
-- Subagents: handle atomic uncertain tasks such as finding candidate news, judging source credibility, ranking industry impact, explaining significance, editing the Chinese report, and reviewing unsupported claims.
-- Keep subagent context small. Pass only the task envelope, relevant items, evidence URLs, and required output schema.
-- Agent and subagent memory must be loaded on demand with `scripts/query_memory.py`; do not preload all references into every role.
-- If a deterministic script and an agent disagree, the main agent must stop and resolve the conflict before approval or publishing.
+- Scripts: normalize run context, validate schemas, compute hashes, format Feishu payloads, call Feishu APIs, and write Feishu Base records.
+- Subagents: find candidate news, judge credibility, rank impact, explain significance, edit the Chinese report, and review unsupported claims.
+- Use `scripts/query_memory.py` for on-demand memory; do not preload all references into every role.
 
 ## Runtime Inputs
 
 Require these inputs from platform config, secret manager, or task payload:
 
-- `AI_NEWS_PLATFORM`: must be `openclaw`; default to `openclaw` when omitted by the OpenClaw runtime.
+- `AI_NEWS_PLATFORM`: `openclaw` or `hermes`.
+- `AI_NEWS_MODE`: `daily` (default) or `weekly`.
 - `AI_NEWS_TIMEZONE`: default `Asia/Shanghai`.
-- `AI_NEWS_WINDOW`: default previous 24 hours.
-- `AI_NEWS_MAX_ITEMS`: default 8.
+- `AI_NEWS_WINDOW`: default `24h` for daily, `7d` for weekly.
+- `AI_NEWS_MAX_ITEMS`: default `8`.
 - `AI_NEWS_LANGUAGE`: default `zh-CN`.
-- `FEISHU_NEWS_ADMIN_ID`: Feishu user ID or open ID for approval.
 - `FEISHU_GROUP_CHAT_ID`: target group chat for publishing.
 - `FEISHU_BASE_APP_TOKEN`: target Feishu Base app token.
 - `FEISHU_BASE_TABLE_ID`: target Feishu Base table ID.
-- Feishu app credentials configured for `lark-cli` message, card callback, and Base write permissions.
-- [Agent Reach](https://github.com/Panniantong/agent-reach) installed and healthy for internet channel access. See [references/agent-reach-integration.md](references/agent-reach-integration.md).
-- OpenClaw exec access enabled: `openclaw config set tools.profile "coding"`.
+- `FEISHU_NEWS_ADMIN_ID`: optional; not required when approval is disabled.
+- Feishu app credentials configured for `lark-cli` message, card, and Base write permissions.
+- [Agent Reach](https://github.com/Panniantong/agent-reach) installed and healthy. See [references/agent-reach-integration.md](references/agent-reach-integration.md).
+- Shell/exec access enabled on the host.
 
-If any required secret or destination ID is missing, stop before collection and report the missing fields.
+If any required destination ID is missing, stop before collection and report the missing fields.
+
+## Schedule
+
+| Job | Cron (Asia/Shanghai) | Mode | Window |
+| --- | --- | --- | --- |
+| Weekday daily news | `0 8 * * 1-5` | `daily` | previous 24h |
+| Sunday weekly digest | `0 20 * * 0` | `weekly` | previous 7d |
+
+See [references/openclaw-runtime.md](references/openclaw-runtime.md) and [AGENT_DEPLOYMENT_GUIDE.md](AGENT_DEPLOYMENT_GUIDE.md) for cron setup.
 
 ## Main Agent Workflow
 
-0. Sync Agent Reach health with `scripts/sync_agent_reach_health.py`, then build source routing with `scripts/check_news_sources.py --refresh-reach`. If Agent Reach is unavailable, continue only in `rss_only` mode and notify the administrator.
-1. Normalize the OpenClaw scheduled run context into a single `RunContext` with `scripts/normalize_run_context.py`.
-2. Load [references/openclaw-runtime.md](references/openclaw-runtime.md) only when wiring OpenClaw cron, secrets, retries, or run state.
-3. Query role-specific memory with `scripts/query_memory.py` before assigning each subagent.
-4. Start the subagent collaboration loop from [references/subagent-contracts.md](references/subagent-contracts.md). Use atomic subagents whenever possible. If real subagent tools are unavailable, emulate the roles as separate labeled passes and preserve the same contracts.
-5. Collect candidate AI industry news through the routed Agent Reach channels and configured RSS/domain allowlists from [references/news-sources.md](references/news-sources.md).
-6. Verify source credibility, publication time, factual claims, and duplicate clusters.
-7. Rank items by impact, novelty, evidence quality, and relevance to the target audience.
-8. Draft the Feishu-ready Chinese daily report with source links and confidence markers.
-9. Run deterministic validation with `scripts/validate_news_payload.py`.
-10. Run the reviewer subagent. The main agent must also audit the result against the quality gates in [references/architecture.md](references/architecture.md).
-11. Freeze the approval payload and compute its hash with `scripts/hash_payload.py`.
-12. Send the approval request to the Feishu news administrator with `scripts/send_feishu_message.py` or a future approval-card script described in [references/feishu-workflow.md](references/feishu-workflow.md).
-13. If approved, ask the archive subagent to prepare archive records, then write them to Feishu Base with `scripts/archive_feishu_base.py`.
-14. Read the archived records back from Feishu Base with `scripts/fetch_feishu_base_records.py`.
-15. Build the final Feishu card from fetched Base record fields with `scripts/build_feishu_card.py`.
-16. Publish the card to the configured Feishu group with `scripts/send_feishu_card.py`.
-17. If rejected, capture the administrator's feedback, reopen the task board, rerun the smallest necessary subagent steps, and repeat steps 9-16. Default maximum retry count is 3 unless OpenClaw policy says otherwise.
-
-## Context And Memory
-
-Keep the active context short:
-
-- Load `SKILL.md` for the top-level workflow.
-- Use `scripts/query_memory.py --query "<topic>"` to retrieve only the reference snippets needed by the current role.
-- Pass each subagent only its task envelope, item slice, evidence URLs, output schema, and directly relevant feedback.
-- Store durable run history outside prompt context, preferably OpenClaw run state and Feishu Base records.
+0. Sync Agent Reach health with `scripts/sync_agent_reach_health.py`, then build routing with `scripts/check_news_sources.py --refresh-reach`. If Agent Reach is unavailable, continue only in `rss_only` mode.
+1. Normalize run context with `scripts/normalize_run_context.py`.
+2. Query role-specific memory with `scripts/query_memory.py` before assigning each subagent.
+3. Start the subagent loop from [references/subagent-contracts.md](references/subagent-contracts.md).
+4. Collect candidates across all required topics, including embodied intelligence, robotics, and world models.
+5. Verify source credibility, publication time, factual claims, and duplicate clusters.
+6. Rank items by impact, novelty, evidence quality, and relevance. For weekly mode, prioritize week-level heat.
+7. Draft the Feishu-ready Chinese report. Every item must include `primary_source_url`.
+8. Run `scripts/validate_news_payload.py`.
+9. Run the reviewer subagent and main-agent audit against [references/architecture.md](references/architecture.md).
+10. Compute publish payload hash with `scripts/hash_payload.py`.
+11. Ask `archive_record_builder` to prepare Base records. Write with `scripts/archive_feishu_base.py`.
+12. Read back archived records with `scripts/fetch_feishu_base_records.py`.
+13. Build the Feishu card with `scripts/build_feishu_card.py`. Each item must render a clickable `[原文链接](url)` from the archived `来源` field.
+14. Publish the card to `FEISHU_GROUP_CHAT_ID` with `scripts/send_feishu_card.py`.
+15. If internal review fails, rerun only the necessary subagent steps. Default max retry count is 3.
 
 ## Output Expectations
 
-The final published report should include:
-
 - Date window and timezone.
 - 5-8 high-signal AI industry news items.
-- One-line headline for each item.
+- One-line headline per item.
 - Concise Chinese summary with business or technical significance.
-- Source links, publication dates, and confidence level.
-- Feishu card content generated from archived Feishu Base fields, not from an unarchived draft.
-- Optional sections for "值得关注" and "待确认", but only if evidence supports them.
-
-Avoid unsupported rumors, vague trend filler, duplicate items, and exaggerated claims.
+- **Clickable original article link per item** in the Feishu card.
+- Source links, publication dates, and confidence level in the payload and Base archive.
+- Feishu card content generated from archived Base fields only.
 
 ## Reference Files
 
-- [references/architecture.md](references/architecture.md): end-to-end architecture, state machine, quality gates, retry behavior, and observability.
-- [references/agent-reach-integration.md](references/agent-reach-integration.md): Agent Reach capability-layer contract and upgrade rules.
-- [references/news-sources.md](references/news-sources.md): topic policy, routing, health checks, and remediation.
-- [references/subagent-contracts.md](references/subagent-contracts.md): subagent roles, message envelopes, review contracts, and handoff schemas.
-- [references/openclaw-runtime.md](references/openclaw-runtime.md): OpenClaw cron, run state, retries, installation, and runtime conventions.
-- [references/feishu-workflow.md](references/feishu-workflow.md): approval card, group publishing, callback handling, and Feishu Base archive schema.
-- [references/script-boundaries.md](references/script-boundaries.md): what must be implemented as deterministic scripts and what remains agent-driven.
-- [references/openclaw-lark-cli-quickstart.md](references/openclaw-lark-cli-quickstart.md): install and run this skill quickly on OpenClaw with the official `lark-cli`.
-- [references/memory-index.md](references/memory-index.md): query hints for loading only the reference snippets each agent needs.
+- [AGENT_DEPLOYMENT_GUIDE.md](AGENT_DEPLOYMENT_GUIDE.md): zero-base deployment for OpenClaw and Hermes via AI agents.
+- [OPENCLAW_AGENT_RUNBOOK.md](OPENCLAW_AGENT_RUNBOOK.md): OpenClaw install and operate runbook.
+- [references/architecture.md](references/architecture.md): architecture, state machine, quality gates.
+- [references/agent-reach-integration.md](references/agent-reach-integration.md): Agent Reach integration.
+- [references/news-sources.md](references/news-sources.md): topic policy and routing.
+- [references/subagent-contracts.md](references/subagent-contracts.md): subagent roles and schemas.
+- [references/openclaw-runtime.md](references/openclaw-runtime.md): cron, retries, runtime conventions.
+- [references/feishu-workflow.md](references/feishu-workflow.md): Feishu archive, card, and publish flow.
+- [references/openclaw-lark-cli-quickstart.md](references/openclaw-lark-cli-quickstart.md): lark-cli quickstart.
+- [references/memory-index.md](references/memory-index.md): memory query hints.

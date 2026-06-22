@@ -2,8 +2,8 @@
 # Run on the OpenClaw host (btkj-agent) after cloning/syncing ai-news skill.
 set -euo pipefail
 
-AI_NEWS_DIR="${AI_NEWS_DIR:-$HOME/ai-news-skill}"
-AI_NEWS_AGENT_ID="${AI_NEWS_AGENT_ID:-ops}"
+AI_NEWS_DIR="${AI_NEWS_DIR:-$HOME/.share/skills/ai-news-skill}"
+AI_NEWS_AGENT_ID="${AI_NEWS_AGENT_ID:-main}"
 FEISHU_GROUP_CHAT_ID="${FEISHU_GROUP_CHAT_ID:-oc_9aa22f921c03f6ea5db59808deb08691}"
 OPENCLAW_MODEL_DEFAULT="${OPENCLAW_MODEL_DEFAULT:-botinkit/smart-router}"
 OPENCLAW_MODEL_COMPLEX="${OPENCLAW_MODEL_COMPLEX:-botinkit/deepseek-v4-pro}"
@@ -66,10 +66,10 @@ scripts/sync_agent_reach_health.py || true
 scripts/check_news_sources.py --refresh-reach || true
 scripts/query_memory.py --query "agent reach integration channel policy" --top-k 2
 
-if [[ -n "${FEISHU_NEWS_ADMIN_ID:-}" && -n "${FEISHU_BASE_APP_TOKEN:-}" && -n "${FEISHU_BASE_TABLE_ID:-}" ]]; then
+if [[ -n "${FEISHU_BASE_APP_TOKEN:-}" && -n "${FEISHU_BASE_TABLE_ID:-}" ]]; then
   scripts/normalize_run_context.py
 else
-  log "Skipping normalize_run_context (set FEISHU_NEWS_ADMIN_ID, FEISHU_BASE_APP_TOKEN, FEISHU_BASE_TABLE_ID for full workflow)"
+  log "Skipping normalize_run_context (set FEISHU_BASE_APP_TOKEN, FEISHU_BASE_TABLE_ID for full workflow)"
 fi
 
 log "Phase 5: Feishu connectivity"
@@ -88,8 +88,8 @@ scripts/send_feishu_message.py \
   --receive-id-type chat_id \
   --text "AI News E2E 连通性测试 $(date -Iseconds)"
 
-log "Phase 6: optional full ai-news dry-run via OpenClaw agent"
+log "Phase 6: optional ai-news source-check via OpenClaw agent"
 openclaw agent --agent "$AI_NEWS_AGENT_ID" --message \
-  "Use \$ai-news to run a source-check dry-run only. Sync Agent Reach health, build routing, collect up to 3 candidates, prepare approval draft if possible, but do not publish to the group unless explicitly approved."
+  "Use \$ai-news to run a source-check dry-run only. Sync Agent Reach health, build routing, collect up to 3 candidates including embodied intelligence, robotics, and world models. Do not publish."
 
 log "Done. Review OpenClaw output above for agent workflow results."

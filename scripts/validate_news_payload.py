@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a Feishu-ready AI news payload before approval."""
+"""Validate a Feishu-ready AI news payload before archive and publish."""
 
 from __future__ import annotations
 

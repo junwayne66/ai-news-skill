@@ -51,6 +51,33 @@ topics:
       - x.com
       - reddit.com
       - bilibili.com
+  embodied_intelligence:
+    primary_channels: [web, exa_search, rss, github]
+    preferred_domains:
+      - figure.ai
+      - 1x.tech
+      - covariant.ai
+      - physicalintelligence.company
+      - arxiv.org
+    rss_feeds: {}
+  robotics:
+    primary_channels: [web, exa_search, rss, github]
+    preferred_domains:
+      - therobotreport.com
+      - roboticsbusinessreview.com
+      - figure.ai
+      - bostondynamics.com
+      - unitree.com
+    rss_feeds: {}
+  world_model:
+    primary_channels: [web, exa_search, rss, github]
+    preferred_domains:
+      - deepmind.google
+      - openai.com
+      - worldlabs.ai
+      - nvidia.com
+      - arxiv.org
+    rss_feeds: {}
 
 fallback_channels: [web, rss, exa_search, github]
 

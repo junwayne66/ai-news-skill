@@ -91,6 +91,9 @@ Current policy topics:
 | `research` | web, github, exa_search, rss | Papers and research labs |
 | `infra` | web, exa_search, rss | Chips, cloud, hardware |
 | `community_signal` | twitter, reddit, bilibili, exa_search | Optional social signal |
+| `embodied_intelligence` | web, exa_search, rss, github | Embodied AI, physical intelligence |
+| `robotics` | web, exa_search, rss, github | Humanoid and industrial robotics |
+| `world_model` | web, exa_search, rss, github | World models, video/3D foundation models |
 
 `community_signal` is optional. Missing social channels must not block the daily report.
 

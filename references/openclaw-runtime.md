@@ -1,94 +1,77 @@
 # OpenClaw Runtime
 
-This skill is OpenClaw-only. Treat OpenClaw as the scheduler, agent runtime, secret provider, retry controller, and manual-run interface.
+This skill runs on OpenClaw or Hermes. OpenClaw is the scheduler, agent runtime, secret provider, retry controller, and manual-run interface.
 
 ## Runtime Contract
 
-OpenClaw should provide either environment variables, task payload JSON, or both. `scripts/normalize_run_context.py` converts them into a stable `RunContext`.
+The platform provides environment variables, task payload JSON, or both. `scripts/normalize_run_context.py` converts them into a stable `RunContext`.
 
 ```json
 {
   "platform": "openclaw",
-  "trigger_type": "scheduled|manual_retry|approval_resume",
+  "mode": "daily|weekly",
+  "report_type": "daily|weekly",
+  "requires_approval": false,
+  "trigger_type": "scheduled|manual_retry",
   "scheduled_at": "ISO-8601",
   "timezone": "Asia/Shanghai",
   "attempt": 1,
   "trace_id": "openclaw-run-id",
-  "config": {
-    "news_window": "24h",
-    "max_items": 8,
-    "language": "zh-CN"
-  },
-  "destinations": {
-    "approval_user_id": "ou_xxx",
-    "publish_chat_id": "oc_xxx",
-    "base_app_token": "base_xxx",
-    "base_table_id": "tbl_xxx"
-  }
+  "max_items": 8,
+  "language": "zh-CN",
+  "publish_chat_id": "oc_xxx",
+  "base_app_token": "xxx",
+  "base_table_id": "tbl_xxx"
 }
 ```
 
 Derived fields:
 
 ```text
-job_id = "ai-news-" + local_date + "-" + timezone_slug
+job_id = "ai-news-" + local_date + "-" + timezone_slug          (daily)
+job_id = "ai-news-weekly-" + local_date + "-" + timezone_slug   (weekly)
 window_end = scheduled_at
-window_start = scheduled_at - configured window
+window_start = scheduled_at - configured window (24h or 7d)
 ```
 
-## Cron Shape
+## Cron Schedule
 
-Recommended daily schedule:
+| Cron | Job | Mode | Window |
+| --- | --- | --- | --- |
+| `0 8 * * 1-5` | Weekday daily news | `daily` | 24h |
+| `0 20 * * 0` | Sunday weekly digest | `weekly` | 7d |
 
-| Time | Job | Purpose |
-| --- | --- | --- |
-| 08:00 | `agent-reach watch` | Agent Reach health and update scan |
-| 08:30 | `sync_agent_reach_health.py` + `check_news_sources.py --refresh-reach` | AI News routing snapshot |
-| 09:00 | Full `$ai-news` workflow | Daily report |
-
-Use OpenClaw cron for the daily trigger:
+Quick setup:
 
 ```bash
-openclaw cron create "0 9 * * *" \
-  'Use $ai-news to run the daily AI industry news workflow for the previous 24 hours. First sync Agent Reach health with scripts/sync_agent_reach_health.py and scripts/check_news_sources.py --refresh-reach. Use deterministic scripts for OpenClaw context normalization, Feishu approval notification, Base archive, Base read-back, Feishu card building, and group publishing. Use atomic subagents for uncertain news collection, verification, ranking, editing, and review. Do not publish before approval and Base archive success.' \
-  --name "AI News Daily" \
-  --agent ops \
-  --session isolated \
-  --no-deliver
+bash scripts/setup_schedule.sh
 ```
 
-`--session isolated` keeps daily runs from inheriting stale conversation context. `--no-deliver` keeps OpenClaw's default delivery quiet because this skill sends approved Feishu messages itself.
+Manual equivalent:
+
+```bash
+openclaw cron create "0 8 * * 1-5" \
+  'Use $ai-news to run the daily AI industry news workflow for the previous 24 hours with AI_NEWS_MODE=daily. Cover embodied intelligence, robotics, and world models. After internal review, archive to Base, build card with source links, publish directly to group. No admin approval.' \
+  --name "AI News Daily Weekdays" --agent main --session isolated --no-deliver
+
+openclaw cron create "0 20 * * 0" \
+  'Use $ai-news to run the weekly AI industry news workflow for the previous 7 days with AI_NEWS_MODE=weekly. Select hottest items. Archive, build weekly card with source links, publish directly to group. No admin approval.' \
+  --name "AI News Weekly Sunday" --agent main --session isolated --no-deliver
+```
+
+`--session isolated` avoids stale context. `--no-deliver` disables OpenClaw default delivery because this skill sends Feishu cards itself.
 
 ## Main Agent Runtime Duties
 
-The main task agent must:
-
-- Call `scripts/normalize_run_context.py` before any collection.
-- Stop if required Feishu destination IDs or secrets are missing.
+- Call `scripts/normalize_run_context.py` before collection.
+- Stop if required Feishu destination IDs are missing.
 - Use `scripts/query_memory.py` before assigning each role.
-- Maintain the task board and route subagent messages.
-- Advance state only after deterministic scripts or subagents return structured status.
-- Persist important run artifacts in OpenClaw run output, Feishu Base, or the configured state store.
+- After internal quality review, archive → read-back → build card → publish directly.
+- Do not wait for administrator approval.
 
 ## Retry Policy
 
-OpenClaw may retry a failed cron run. The main agent must make publish and archive idempotent:
-
-- `job_id + approved_payload_hash` is the publish idempotency key.
+- `job_id + payload_hash` is the publish idempotency key.
 - `job_id + item_id` is the archive idempotency key.
 - If archiving fails, do not publish; retry archive only.
-- If card publishing fails after archive success, retry card publish only with the same card hash.
-- If approval is rejected, do not rely on platform retry. Replan explicitly from the administrator feedback.
-
-## Approval Resume
-
-Fast MVP uses manual approval:
-
-```text
-管理员回复: 同意发布 <payload_hash>
-管理员回复: 驳回 <feedback>
-```
-
-The main agent resumes through a manual OpenClaw run or follow-up task, validates the hash, and either publishes or replans.
-
-Full automation can add Feishu interactive cards and callback validation, but callback verification must remain deterministic code.
+- If card publishing fails after archive success, retry card publish with the same card hash.

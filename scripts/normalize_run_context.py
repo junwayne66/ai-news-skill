@@ -13,11 +13,13 @@ from zoneinfo import ZoneInfo
 
 
 REQUIRED_DESTINATION_ENV = [
-    "FEISHU_NEWS_ADMIN_ID",
     "FEISHU_GROUP_CHAT_ID",
     "FEISHU_BASE_APP_TOKEN",
     "FEISHU_BASE_TABLE_ID",
 ]
+
+SUPPORTED_PLATFORMS = {"openclaw", "hermes"}
+SUPPORTED_MODES = {"daily", "weekly"}
 
 
 def parse_iso_datetime(value: str, tz: ZoneInfo) -> datetime:
@@ -63,8 +65,27 @@ def main() -> int:
 
     payload = read_payload(args.payload)
     platform = env_or_payload("AI_NEWS_PLATFORM", payload, "openclaw")
-    if platform != "openclaw":
-        print(json.dumps({"ok": False, "error": "AI_NEWS_PLATFORM must be openclaw"}))
+    if platform not in SUPPORTED_PLATFORMS:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"AI_NEWS_PLATFORM must be one of: {', '.join(sorted(SUPPORTED_PLATFORMS))}",
+                }
+            )
+        )
+        return 2
+
+    mode = (env_or_payload("AI_NEWS_MODE", payload, "daily") or "daily").lower()
+    if mode not in SUPPORTED_MODES:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"AI_NEWS_MODE must be one of: {', '.join(sorted(SUPPORTED_MODES))}",
+                }
+            )
+        )
         return 2
 
     timezone_name = env_or_payload("AI_NEWS_TIMEZONE", payload, "Asia/Shanghai")
@@ -77,7 +98,8 @@ def main() -> int:
         or datetime.now(timezone.utc).isoformat()
     )
     scheduled_at = parse_iso_datetime(str(scheduled_raw), tz)
-    window_delta = parse_window(env_or_payload("AI_NEWS_WINDOW", payload, "24h") or "24h")
+    default_window = "7d" if mode == "weekly" else "24h"
+    window_delta = parse_window(env_or_payload("AI_NEWS_WINDOW", payload, default_window) or default_window)
     window_start = scheduled_at - window_delta
 
     missing = [name for name in REQUIRED_DESTINATION_ENV if not env_or_payload(name, payload)]
@@ -87,7 +109,8 @@ def main() -> int:
 
     local_date = scheduled_at.date().isoformat()
     timezone_slug = timezone_name.lower().replace("/", "-").replace("_", "-")
-    job_id = payload.get("job_id") or f"ai-news-{local_date}-{timezone_slug}"
+    job_prefix = "ai-news-weekly" if mode == "weekly" else "ai-news"
+    job_id = payload.get("job_id") or f"{job_prefix}-{local_date}-{timezone_slug}"
 
     context = {
         "job_id": job_id,
@@ -100,6 +123,9 @@ def main() -> int:
         "attempt": int(payload.get("attempt", os.getenv("AI_NEWS_ATTEMPT", "1"))),
         "max_attempts": int(payload.get("max_attempts", os.getenv("AI_NEWS_MAX_ATTEMPTS", "3"))),
         "trace_id": str(payload.get("trace_id", payload.get("run_id", job_id))),
+        "mode": mode,
+        "report_type": "weekly" if mode == "weekly" else "daily",
+        "requires_approval": False,
         "max_items": int(env_or_payload("AI_NEWS_MAX_ITEMS", payload, "8") or "8"),
         "language": env_or_payload("AI_NEWS_LANGUAGE", payload, "zh-CN"),
         "approval_user_id": env_or_payload("FEISHU_NEWS_ADMIN_ID", payload),

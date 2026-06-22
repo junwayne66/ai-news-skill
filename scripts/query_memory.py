@@ -11,7 +11,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_FILES = [ROOT / "SKILL.md", *sorted((ROOT / "references").glob("*.md"))]
+DEFAULT_FILES = [
+    ROOT / "SKILL.md",
+    *sorted(path for path in (ROOT / "references").glob("*.md") if not path.name.startswith("._")),
+]
 
 
 @dataclass
@@ -27,7 +30,10 @@ def terms(query: str) -> list[str]:
 
 
 def split_sections(path: Path) -> list[tuple[str, str]]:
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return []
     sections: list[tuple[str, str]] = []
     current_heading = path.name
     current_lines: list[str] = []
