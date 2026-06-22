@@ -1,0 +1,7 @@
+agent_reach:
+  min_version: "1.5.0"
+  health_probe: "agent-reach doctor --json"
+  watch_command: "agent-reach watch"
+  update_doc_url: "https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/update.md"
+  install_doc_url: "https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md"
+  skill_path_hint: "~/.openclaw/skills/agent-reach/SKILL.md"

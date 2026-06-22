@@ -14,6 +14,9 @@ Use `scripts/query_memory.py` to load only the snippets needed for the current t
 | Feishu group publishing | `feishu group publish message_id` |
 | Feishu Base archive | `feishu base archive records fields` |
 | Quality gates | `quality gates source duplicate confidence` |
+| Agent Reach integration | `agent reach integration doctor json` |
+| News channel policy | `news channel policy routing fallback` |
+| Source health scripts | `sync agent reach health check news sources` |
 
 ## Loading Rule
 

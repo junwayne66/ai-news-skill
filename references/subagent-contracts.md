@@ -67,6 +67,17 @@ Input:
 ```json
 {
   "run_context": {},
+  "reach_health": {
+    "channels": {
+      "web": {"status": "healthy", "active_backend": "Jina Reader"},
+      "exa_search": {"status": "healthy", "active_backend": "Exa via mcporter"}
+    }
+  },
+  "allowed_channels": ["web", "rss", "github", "exa_search"],
+  "degraded_channels": ["twitter"],
+  "blocked_channels": ["reddit"],
+  "fallback_policy": "use_exa_when_primary_down",
+  "topic_routes": {},
   "source_policy": {
     "preferred_sources": ["official blogs", "company newsrooms", "regulator sites", "research labs", "credible tech media"],
     "avoid_sources": ["unsourced social posts", "content farms", "duplicate reposts"]
@@ -74,6 +85,22 @@ Input:
   "max_candidates": 30
 }
 ```
+
+Before assigning `source_collector`, the main agent must run:
+
+```bash
+scripts/sync_agent_reach_health.py
+scripts/check_news_sources.py --refresh-reach
+```
+
+Collector guidance for Agent Reach:
+
+- Use upstream tools directly, following the Agent Reach skill. Do not call custom AI News wrappers.
+- `web`: `curl -s "https://r.jina.ai/URL"`
+- `exa_search`: `mcporter call 'exa.web_search_exa(...)'`
+- `github`: `gh search ...`
+- `rss`: read feeds listed in `config/news_channel_policy.yaml`
+- `twitter` / `reddit` / `bilibili`: only when the channel is in `allowed_channels`
 
 Output:
 
@@ -197,6 +224,12 @@ Return:
     }
   ],
   "non_blocking_suggestions": [],
+  "coverage_alerts": [
+    {
+      "topic": "community_signal",
+      "detail": "twitter/reddit channel unavailable"
+    }
+  ],
   "approval_ready": true
 }
 ```
@@ -240,9 +273,20 @@ Return:
 ```json
 {
   "status": "ok",
-  "rerun_steps": ["source_collector|source_verifier|dedupe_ranker|industry_analyst|report_editor|quality_reviewer"],
-  "reason": "short explanation",
-  "minimal_feedback": "instruction to pass to the rerun role"
+  "rerun_steps": ["source_collector", "source_verifier"],
+  "reason": "twitter channel down, switched to exa_search",
+  "minimal_feedback": "Use exa search for AI funding in the last 24h to backfill community_signal candidates"
+}
+```
+
+Source-failure example:
+
+```json
+{
+  "status": "ok",
+  "rerun_steps": ["source_collector", "source_verifier"],
+  "reason": "primary RSS feeds down",
+  "minimal_feedback": "Use exa_search and web channels for model_release topics only"
 }
 ```
 
