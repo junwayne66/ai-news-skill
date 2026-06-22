@@ -11,6 +11,8 @@ The architecture follows one rule: scripts execute deterministic events, agents 
 ```mermaid
 flowchart LR
   A["OpenClaw cron / manual run"] --> B["OpenClaw runtime adapter"]
+  B --> RS["Agent Reach sync scripts"]
+  RS --> AR["agent-reach doctor --json"]
   B --> P["Deterministic scripts"]
   P --> C["Main agent"]
   C --> P
@@ -45,6 +47,7 @@ flowchart LR
 
 The main agent is the only role allowed to advance workflow state. It owns:
 
+- Agent Reach health sync and source routing before collection.
 - OpenClaw run context normalization.
 - Deterministic script calls for schema validation, hashing, idempotency, payload freezing, Feishu API submission, and archive writes.
 - Subagent task decomposition, message routing, dependency control, and retry policy.
@@ -60,6 +63,8 @@ Use this explicit state machine for idempotency and recovery:
 
 ```text
 scheduled
+  -> reach_sync
+  -> sources_ready
   -> collecting
   -> verifying
   -> ranking
@@ -73,6 +78,8 @@ scheduled
   -> completed
 ```
 
+`reach_sync` and `sources_ready` are deterministic script steps that must complete before `collecting`.
+
 Rejection path:
 
 ```text
@@ -85,6 +92,56 @@ Failure path:
 any_state -> failed_retriable -> same_state
 any_state -> failed_terminal -> notify_admin
 ```
+
+## Main Loop
+
+Use this Loop Engineering contract for the main agent:
+
+```text
+prepare_run_context()
+-> reach_sync()              # scripts/sync_agent_reach_health.py
+-> sources_ready()           # scripts/check_news_sources.py
+-> run_collection_loop()
+-> run_verification_loop()
+-> run_ranking_loop()
+-> run_drafting_loop()
+-> run_review_loop()
+-> approval_and_archive_loop()
+```
+
+Loop step rules:
+
+| Step | Script | `max_attempts` default | On failure |
+| --- | --- | --- | --- |
+| `reach_sync` | `sync_agent_reach_health.py` | 2 | Enter `rss_only`, notify admin |
+| `sources_ready` | `check_news_sources.py` | +2 | Inject fallback channels, emit `coverage_alerts` |
+| `collecting` | subagent | 3 | Rerun collector with fallback routing |
+| `verifying` | subagent + `validate_news_payload.py` | 2 | Re-source or drop item |
+| post-approval | existing Feishu scripts | 3 | Keep existing idempotency rules |
+
+`ensure_sources_ready` pseudologic:
+
+```text
+health = sync_agent_reach_health()
+policy = load(news_channel_policy.yaml)
+routing = build_routing(health, policy)
+
+if routing.healthy_primary_count < policy.coverage_rules.min_healthy_primary_channels:
+  routing = inject_fallbacks(routing)
+  emit coverage_alert
+
+return routing
+```
+
+## Source Degradation Matrix
+
+| Level | Trigger | Action |
+| --- | --- | --- |
+| L1 | One RSS/domain source down | Skip source, use same-topic alternatives |
+| L2 | One Agent Reach channel down | Switch to fallback channel from policy |
+| L3 | Agent Reach unavailable | `rss_only` mode + admin notification |
+
+When a whole topic class is unavailable, `quality_reviewer` may return `coverage_alerts` without blocking publication if `allow_degraded_run` is enabled in policy.
 
 ## Data Model
 
@@ -167,6 +224,7 @@ The main agent must reject the draft before Feishu approval if any gate fails:
 
 Retry only the smallest necessary part:
 
+- Agent Reach channel failure: rerun `reach_sync` and `sources_ready`, then collector with fallback channels only.
 - Source fetch failure: rerun collector with backup source channels.
 - Verification failure: ask collector for alternative sources or remove the item.
 - Reviewer failure: rerun editor with reviewer notes.
@@ -182,6 +240,8 @@ Use `job_id + item_id` as the archive idempotency key and `job_id + card_hash` a
 Log or persist these events:
 
 - Run started and normalized context.
+- Agent Reach health snapshot and routing mode.
+- RSS/domain probe summary.
 - Subagent task assignment and completion status.
 - Candidate count, verified count, final item count.
 - Internal review pass/fail reasons.
@@ -196,6 +256,7 @@ Log or persist these events:
 Use scripts for:
 
 - OpenClaw input normalization.
+- Agent Reach health sync and source routing.
 - Required field and schema validation.
 - URL/date/window checks that can be computed from available data.
 - Duplicate ID and payload hash generation.

@@ -36,17 +36,19 @@ Require these inputs from platform config, secret manager, or task payload:
 - `FEISHU_BASE_APP_TOKEN`: target Feishu Base app token.
 - `FEISHU_BASE_TABLE_ID`: target Feishu Base table ID.
 - Feishu app credentials configured for `lark-cli` message, card callback, and Base write permissions.
-- Source access configuration, such as search APIs, RSS lists, official newsroom URLs, or approved OpenClaw web tools.
+- [Agent Reach](https://github.com/Panniantong/agent-reach) installed and healthy for internet channel access. See [references/agent-reach-integration.md](references/agent-reach-integration.md).
+- OpenClaw exec access enabled: `openclaw config set tools.profile "coding"`.
 
 If any required secret or destination ID is missing, stop before collection and report the missing fields.
 
 ## Main Agent Workflow
 
+0. Sync Agent Reach health with `scripts/sync_agent_reach_health.py`, then build source routing with `scripts/check_news_sources.py --refresh-reach`. If Agent Reach is unavailable, continue only in `rss_only` mode and notify the administrator.
 1. Normalize the OpenClaw scheduled run context into a single `RunContext` with `scripts/normalize_run_context.py`.
 2. Load [references/openclaw-runtime.md](references/openclaw-runtime.md) only when wiring OpenClaw cron, secrets, retries, or run state.
 3. Query role-specific memory with `scripts/query_memory.py` before assigning each subagent.
 4. Start the subagent collaboration loop from [references/subagent-contracts.md](references/subagent-contracts.md). Use atomic subagents whenever possible. If real subagent tools are unavailable, emulate the roles as separate labeled passes and preserve the same contracts.
-5. Collect candidate AI industry news from approved source channels.
+5. Collect candidate AI industry news through the routed Agent Reach channels and configured RSS/domain allowlists from [references/news-sources.md](references/news-sources.md).
 6. Verify source credibility, publication time, factual claims, and duplicate clusters.
 7. Rank items by impact, novelty, evidence quality, and relevance to the target audience.
 8. Draft the Feishu-ready Chinese daily report with source links and confidence markers.
@@ -86,6 +88,8 @@ Avoid unsupported rumors, vague trend filler, duplicate items, and exaggerated c
 ## Reference Files
 
 - [references/architecture.md](references/architecture.md): end-to-end architecture, state machine, quality gates, retry behavior, and observability.
+- [references/agent-reach-integration.md](references/agent-reach-integration.md): Agent Reach capability-layer contract and upgrade rules.
+- [references/news-sources.md](references/news-sources.md): topic policy, routing, health checks, and remediation.
 - [references/subagent-contracts.md](references/subagent-contracts.md): subagent roles, message envelopes, review contracts, and handoff schemas.
 - [references/openclaw-runtime.md](references/openclaw-runtime.md): OpenClaw cron, run state, retries, installation, and runtime conventions.
 - [references/feishu-workflow.md](references/feishu-workflow.md): approval card, group publishing, callback handling, and Feishu Base archive schema.

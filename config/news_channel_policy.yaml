@@ -1,0 +1,60 @@
+topics:
+  model_release:
+    primary_channels: [web, github, exa_search, rss]
+    preferred_domains:
+      - openai.com
+      - anthropic.com
+      - deepmind.google
+      - ai.google
+      - ai.meta.com
+      - mistral.ai
+      - x.ai
+    rss_feeds:
+      openai-blog-rss: https://openai.com/news/rss.xml
+      anthropic-watch-rss: https://sefaertunc.github.io/anthropic-watch/feeds/all.xml
+      google-ai-blog-rss: https://blog.google/technology/ai/rss/
+  funding:
+    primary_channels: [exa_search, web, rss]
+    preferred_domains:
+      - techcrunch.com
+      - crunchbase.com
+      - reuters.com
+      - bloomberg.com
+  policy_regulation:
+    primary_channels: [web, exa_search, rss]
+    preferred_domains:
+      - whitehouse.gov
+      - ec.europa.eu
+      - cac.gov.cn
+      - commerce.gov
+  research:
+    primary_channels: [web, github, exa_search, rss]
+    preferred_domains:
+      - arxiv.org
+      - huggingface.co
+      - paperswithcode.com
+    rss_feeds:
+      arxiv-cs-ai-rss: http://export.arxiv.org/rss/cs.AI
+      huggingface-blog-rss: https://huggingface.co/blog/feed.xml
+  infra:
+    primary_channels: [web, exa_search, rss]
+    preferred_domains:
+      - nvidia.com
+      - amd.com
+      - cloud.google.com
+      - aws.amazon.com
+      - azure.microsoft.com
+  community_signal:
+    primary_channels: [twitter, reddit, bilibili, exa_search]
+    requires_reach_channels: []
+    preferred_domains:
+      - x.com
+      - reddit.com
+      - bilibili.com
+
+fallback_channels: [web, rss, exa_search, github]
+
+coverage_rules:
+  min_healthy_primary_channels: 2
+  min_candidates_before_verify: 15
+  allow_degraded_run: true

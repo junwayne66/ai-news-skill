@@ -38,11 +38,19 @@ window_start = scheduled_at - configured window
 
 ## Cron Shape
 
+Recommended daily schedule:
+
+| Time | Job | Purpose |
+| --- | --- | --- |
+| 08:00 | `agent-reach watch` | Agent Reach health and update scan |
+| 08:30 | `sync_agent_reach_health.py` + `check_news_sources.py --refresh-reach` | AI News routing snapshot |
+| 09:00 | Full `$ai-news` workflow | Daily report |
+
 Use OpenClaw cron for the daily trigger:
 
 ```bash
 openclaw cron create "0 9 * * *" \
-  'Use $ai-news to run the daily AI industry news workflow for the previous 24 hours. Use deterministic scripts for OpenClaw context normalization, Feishu approval notification, Base archive, Base read-back, Feishu card building, and group publishing. Use atomic subagents for uncertain news collection, verification, ranking, editing, and review. Do not publish before approval and Base archive success.' \
+  'Use $ai-news to run the daily AI industry news workflow for the previous 24 hours. First sync Agent Reach health with scripts/sync_agent_reach_health.py and scripts/check_news_sources.py --refresh-reach. Use deterministic scripts for OpenClaw context normalization, Feishu approval notification, Base archive, Base read-back, Feishu card building, and group publishing. Use atomic subagents for uncertain news collection, verification, ranking, editing, and review. Do not publish before approval and Base archive success.' \
   --name "AI News Daily" \
   --agent ops \
   --session isolated \

@@ -22,6 +22,8 @@ Implement these as scripts or OpenClaw-provided command invocations:
 - Send Feishu approval requests, group messages, and Base writes through `lark-cli`.
 - Validate Feishu callback signature, operator ID, expiry, and payload hash.
 - Retry API calls with bounded backoff and structured error reporting.
+- Sync Agent Reach health and build source routing before collection.
+- Probe configured RSS feeds and emit source health snapshots.
 
 ## Agent Decisions
 
@@ -41,6 +43,7 @@ The main agent should use this loop:
 
 ```text
 prepare minimal input
+-> sync Agent Reach health if entering collection
 -> call deterministic script if available
 -> pass clean slice to one atomic subagent
 -> validate subagent output with script
@@ -68,6 +71,8 @@ These utility scripts provide deterministic building blocks:
 - `scripts/build_feishu_card.py`: build Feishu interactive card JSON from fetched Base record fields.
 - `scripts/send_feishu_card.py`: send Feishu interactive cards through `lark-cli api`.
 - `scripts/query_memory.py`: return small relevant snippets from `SKILL.md` and `references/`.
+- `scripts/sync_agent_reach_health.py`: consume `agent-reach doctor --json` and write a health snapshot.
+- `scripts/check_news_sources.py`: merge Agent Reach channel health with RSS/domain probes and build routing.
 
 Production integrations should add:
 

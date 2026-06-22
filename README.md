@@ -24,10 +24,15 @@ ai-news/
 ├── SKILL.md
 ├── agents/
 │   └── openai.yaml
+├── config/
+│   ├── agent_reach_compat.yaml
+│   └── news_channel_policy.yaml
 ├── references/
+│   ├── agent-reach-integration.md
 │   ├── architecture.md
 │   ├── feishu-workflow.md
 │   ├── memory-index.md
+│   ├── news-sources.md
 │   ├── openclaw-lark-cli-quickstart.md
 │   ├── openclaw-runtime.md
 │   ├── script-boundaries.md
@@ -35,12 +40,14 @@ ai-news/
 └── scripts/
     ├── archive_feishu_base.py
     ├── build_feishu_card.py
+    ├── check_news_sources.py
     ├── fetch_feishu_base_records.py
     ├── hash_payload.py
     ├── normalize_run_context.py
     ├── query_memory.py
     ├── send_feishu_card.py
     ├── send_feishu_message.py
+    ├── sync_agent_reach_health.py
     └── validate_news_payload.py
 ```
 
@@ -118,15 +125,40 @@ $LARK_CLI_BIN im +messages-send \
   --dry-run
 ```
 
+### Agent Reach
+
+AI News uses [Agent Reach](https://github.com/Panniantong/agent-reach) as the internet capability layer. Install it before running collection:
+
+```bash
+pipx install https://github.com/Panniantong/agent-reach/archive/main.zip
+agent-reach install --env=auto
+agent-reach doctor --json
+```
+
+OpenClaw must allow shell execution:
+
+```bash
+openclaw config set tools.profile "coding"
+```
+
+Upgrade path after Agent Reach releases:
+
+```text
+帮我更新 Agent Reach：https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/update.md
+```
+
+AI News only references Agent Reach **channel names**. Backend changes are picked up automatically through `agent-reach doctor --json`.
+
 ### 新闻源能力
 
-OpenClaw 运行环境需要至少一种新闻采集能力：
+新闻采集依赖 Agent Reach channel 健康状态与 [`config/news_channel_policy.yaml`](config/news_channel_policy.yaml) 中的主题策略。采集前运行：
 
-- 可访问公网网页和官方新闻源。
-- 或配置搜索 API/RSS 源。
-- 或由 OpenClaw 提供网页搜索/浏览工具。
+```bash
+scripts/sync_agent_reach_health.py
+scripts/check_news_sources.py --refresh-reach
+```
 
-新闻采集是不确定性任务，由 subagent 判断；但 URL、日期窗口、字段完整性、payload hash 等由脚本做确定性校验。
+若 Agent Reach 不可用，workflow 会降级到 `rss_only` 模式，并应通知管理员修复 Agent Reach，而不是放宽质量门槛。
 
 ## 安装 Skill
 
@@ -246,14 +278,21 @@ scripts/normalize_run_context.py
 
 ```bash
 scripts/query_memory.py \
-  --query "subagent peer request memory" \
+  --query "agent reach integration channel policy" \
   --top-k 3 \
   --max-chars 800
 ```
 
-预期返回 `SKILL.md` 或 `references/subagent-contracts.md` 中的相关小片段。
+### 3. 检查 Agent Reach 健康同步
 
-### 3. 检查 payload hash
+```bash
+scripts/sync_agent_reach_health.py
+scripts/check_news_sources.py --refresh-reach
+```
+
+如果机器尚未安装 Agent Reach，上述脚本会返回 `rss_only` 降级信息，这是预期行为。
+
+### 4. 检查 payload hash
 
 ```bash
 printf '%s\n' '{"title":"AI News","items":[{"headline":"test"}]}' \
@@ -262,7 +301,7 @@ printf '%s\n' '{"title":"AI News","items":[{"headline":"test"}]}' \
 
 预期返回稳定的 `sha256`。
 
-### 4. 检查新闻 payload 校验
+### 5. 检查新闻 payload 校验
 
 ```bash
 cat > /tmp/ai-news-payload.json <<'JSON'
@@ -292,7 +331,7 @@ scripts/validate_news_payload.py /tmp/ai-news-payload.json --min-items 1 --max-i
 {"errors": [], "item_count": 1, "ok": true, "warnings": []}
 ```
 
-### 5. dry-run 测试飞书消息
+### 6. dry-run 测试飞书消息
 
 ```bash
 printf '%s\n' '{
@@ -314,7 +353,7 @@ printf '%s\n' '{
 }' | LARK_CLI_BIN=feishu-cli scripts/send_feishu_message.py
 ```
 
-### 6. dry-run 测试多维表写入
+### 7. dry-run 测试多维表写入
 
 ```bash
 printf '%s\n' '{
@@ -331,7 +370,7 @@ printf '%s\n' '{
 }' | scripts/archive_feishu_base.py --dry-run
 ```
 
-### 7. dry-run 测试多维表记录读回
+### 8. dry-run 测试多维表记录读回
 
 ```bash
 printf '%s\n' '{
@@ -339,7 +378,7 @@ printf '%s\n' '{
 }' | scripts/fetch_feishu_base_records.py --dry-run
 ```
 
-### 8. 基于读回字段构建飞书卡片
+### 9. 基于读回字段构建飞书卡片
 
 ```bash
 cat > /tmp/ai-news-archived-records.json <<'JSON'
@@ -374,7 +413,7 @@ cat /tmp/ai-news-card.json
 
 生产运行时建议使用 `scripts/fetch_feishu_base_records.py` 的真实返回作为 `scripts/build_feishu_card.py` 输入；上面的样例只是本地构建测试。
 
-### 9. dry-run 测试飞书卡片发送
+### 10. dry-run 测试飞书卡片发送
 
 ```bash
 python3 - <<'PY' >/tmp/ai-news-card-message.json
@@ -414,11 +453,29 @@ Use $ai-news to run a dry-run daily AI news workflow for the previous 24 hours. 
 
 ## 创建每日定时任务
 
+推荐先创建 Agent Reach 巡检，再创建 AI News 源健康检查，最后创建日报任务：
+
+```bash
+openclaw cron create "0 8 * * *" \
+  'Run agent-reach watch. If the output contains problems or a new version, notify the admin with the full report and the official update doc URL.' \
+  --name "Agent Reach Watch" \
+  --agent ops \
+  --session isolated \
+  --no-deliver
+
+openclaw cron create "30 8 * * *" \
+  'Use $ai-news source health scripts only: run scripts/sync_agent_reach_health.py and scripts/check_news_sources.py --refresh-reach. Do not publish.' \
+  --name "AI News Source Check" \
+  --agent ops \
+  --session isolated \
+  --no-deliver
+```
+
 OpenClaw cron 的命令格式是 schedule 在前、prompt 在后。建议使用独立会话，避免继承旧上下文：
 
 ```bash
 openclaw cron create "0 9 * * *" \
-  'Use $ai-news to run the daily AI industry news workflow for the previous 24 hours. Use deterministic scripts for OpenClaw context normalization, Feishu approval notification, Base archive, Base read-back, Feishu card building, and group publishing. Use atomic subagents for uncertain news collection, verification, ranking, editing, and review. Do not publish before approval and Base archive success.' \
+  'Use $ai-news to run the daily AI industry news workflow for the previous 24 hours. First sync Agent Reach health with scripts/sync_agent_reach_health.py and scripts/check_news_sources.py --refresh-reach. Use deterministic scripts for OpenClaw context normalization, Feishu approval notification, Base archive, Base read-back, Feishu card building, and group publishing. Use atomic subagents for uncertain news collection, verification, ranking, editing, and review. Do not publish before approval and Base archive success.' \
   --name "AI News Daily" \
   --agent ops \
   --session isolated \
@@ -495,7 +552,9 @@ openclaw cron runs --id <job-id> --limit 10
 
 ```bash
 openclaw skills check --agent ops
-$LARK_CLI_BIN auth status
+agent-reach doctor --json
+scripts/sync_agent_reach_health.py
+scripts/check_news_sources.py --refresh-reach
 scripts/normalize_run_context.py
 scripts/query_memory.py --query "quality gates source duplicate confidence"
 scripts/validate_news_payload.py /tmp/ai-news-payload.json --min-items 1 --max-items 8
@@ -608,9 +667,10 @@ $LARK_CLI_BIN im +messages-send --as bot --chat-id "oc_xxx" --text "test" --dry-
 
 ### 新闻质量不稳定
 
-优先调整 subagent 输入，而不是放宽脚本校验：
+优先调整 Agent Reach channel 健康、主题策略和 subagent 输入，而不是放宽脚本校验：
 
-- 增加可靠新闻源。
+- 运行 `agent-reach doctor --json` 和 `scripts/check_news_sources.py --refresh-reach`。
+- 更新 [`config/news_channel_policy.yaml`](config/news_channel_policy.yaml) 中的稳定源和 fallback channel。
 - 调整 `AI_NEWS_MAX_ITEMS`。
 - 在 prompt 中指定更明确的目标受众。
 - 保持 `quality_reviewer` 严格；宁可少发，也不要发布证据不足的新闻。
